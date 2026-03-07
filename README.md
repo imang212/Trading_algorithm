@@ -260,7 +260,7 @@ stop_loss = vstupní_cena − ATR_SL_MULT × ATR(14)
 ```
 Pokud cena klesne pod tuto úroveň dříve, než přijde SELL signál, pozice se okamžitě uzavře jako **STOP-LOSS** obchod a omezí tak maximální ztrátu. Do každého obchodu je investováno **95 % dostupného kapitálu** (5 % zůstává jako rezerva na poplatky a skluz).
 
-<img width="3585" height="1359" alt="signals" src="https://github.com/user-attachments/assets/60171474-3dac-47c1-9aaf-584c3b517be1" />
+<img width="3585" height="1894" alt="signals_table" src="https://github.com/user-attachments/assets/44c4eda1-440f-49da-b74e-200ccce1e0a9" />
 
 ## 5. Co je to backtest?
 Backtest je **historická simulace obchodní strategie**. Místo skutečného obchodování skript prochází historická data den po dni a aplikuje strategii, jako by se obchodovalo v reálném čase — ale na minulých datech.
@@ -306,9 +306,9 @@ Backtest je **historická simulace obchodní strategie**. Místo skutečného ob
 | **Ø BUY score** | 0.0 – 5.0 | Průměrný počet bullish indikátorů za celé sledované období (průměr přes všechny dny). Hodnota blízká 5 = trh byl po většinu doby v silném rostoucím trendu. Hodnota blízká 2.5 = neutrální trh bez jasného směru. |
 | **Ø SELL score** | 0.0 – 5.0 | Průměrný počet bearish indikátorů za celé sledované období. Součet `Ø BUY score + Ø SELL score` nemusí dávat 5, protože každý indikátor se hodnotí nezávisle pro BUY i SELL podmínku. Vysoký SELL score = trh byl převážně v klesajícím trendu. |
 
-<img width="2685" height="1110" alt="summary_table" src="https://github.com/user-attachments/assets/a36c4d8f-70d3-4c1d-a611-e5473367bb30" />
+<img width="2685" height="1542" alt="summary_table" src="https://github.com/user-attachments/assets/995add8e-a4cc-4e52-870a-64368c848854" />
 
-<img width="2385" height="1479" alt="summary_comparison" src="https://github.com/user-attachments/assets/f3a9562b-0f93-42f3-a489-983caafd65be" />
+<img width="2385" height="1478" alt="summary_comparison" src="https://github.com/user-attachments/assets/42e17b7d-2ca5-4d47-9c52-08d694acbb81" />
 
 ## 6. Výstupy skriptu
 Po dokončení backtestу skript vygeneruje:
