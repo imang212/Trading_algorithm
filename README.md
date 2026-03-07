@@ -25,8 +25,12 @@
       - [Rizikové metriky](#rizikové-metriky)
       - [Metriky kvality obchodů](#metriky-kvality-obchodů)
       - [Skóre indikátorů](#skóre-indikátorů)
-  - [6. Výstupy skriptu](#6-výstupy-skriptu)
-  - [7. Disclaimer](#7-disclaimer)
+  - [6. Monte Carlo predikce](#6-monte-carlo-predikce)
+    - [Co je Monte Carlo simulace](#co-je-monte-carlo-simulace)
+    - [Jak to funguje ve skriptu](#jak-to-funguje-ve-skriptu)
+    - [Metody simulace dle profilu](#metody-simulace-dle-profilu)
+  - [7. Výstupy skriptu](#7-výstupy-skriptu)
+  - [8. Disclaimer](#8-disclaimer)
    
 ## 1. Přehled skriptu
 Skript provádí historický **backtest kombinované technické obchodní strategie** na devíti různých assetech (zlato, stříbro, akcie). Pro každý asset:
@@ -310,18 +314,48 @@ Backtest je **historická simulace obchodní strategie**. Místo skutečného ob
 
 <img width="2385" height="1478" alt="summary_comparison" src="https://github.com/user-attachments/assets/42e17b7d-2ca5-4d47-9c52-08d694acbb81" />
 
-## 6. Výstupy skriptu
-Po dokončení backtestу skript vygeneruje:
-- **Terminál** — přehledná tabulka se všemi metrikami pro každý asset.
-- **`chart_<asset>.png`** — individuální 5-panelový graf pro každý asset:
-  - Panel 1: Cena + SMA + Bollinger Bands + označené BUY/SELL/STOP obchody
-  - Panel 2: Equity křivka (vývoj kapitálu v čase)
-  - Panel 3: RSI s vyznačenými zónami překoupenosti/přeprodanosti
-  - Panel 4: MACD s histogramem
-  - Panel 5: ATR (volatilita)
-- **`summary_comparison.png`** — souhrnný srovnávací graf všech assetů (výnosy vs B&H, Sharpe Ratio, Max Drawdown, Win Rate).
 
-## 7. Disclaimer
+## 6. Monte Carlo predikce
+### Co je Monte Carlo simulace
+
+Monte Carlo je statistická metoda která místo jedné předpovědi generuje **tisíce možných scénářů** vývoje ceny a zobrazuje jejich pravděpodobnostní rozložení. Pojmenována podle kasina v Monte Carlu kvůli využití náhodnosti.
+
+### Jak to funguje ve skriptu
+Skript používá **jinou metodu simulace pro každý profil assetu** – každý typ trhu má jiné chování a zaslouží si model který to respektuje:
+
+```
+1. Vezme denní výnosy posledních 90 dní  →  zjistí volatilitu a parametry
+2. Vybere model dle profilu assetu       →  viz tabulka níže
+3. Vygeneruje 1000 náhodných cest        →  každý den = krok dle zvoleného modelu
+4. Spočítá percentily ze všech cest      →  10%, 25%, 50%, 75%, 90%
+5. Vykreslí vějíř pravděpodobnosti       →  30 obchodních dní dopředu
+```
+
+### Metody simulace dle profilu
+| Profil | Model | Barva | Popis |
+|--------|-------|-------|-------|
+| `DEFENSIVE` | **Random Walk** | modrá | Prostý GBM – každý den nezávislý náhodný šok. Vhodné pro ETF kde efektivní trh funguje nejlépe. |
+| `TECH` | **Random Walk + Earnings** | fialová | Random walk doplněný o náhodné earnings skoky (±8 % průměrně, ~48% šance v 30denním okně). Zachycuje čtvrtletní volatilitu tech akcií. |
+| `COMMODITY` | **GBM + Mean Reversion** | oranžová | Přidává přitažlivost k dlouhodobému průměru (1 rok). Komodity mají tendenci vracet se k rovnovážné ceně – zlato k long-term průměru, ropa k výrobním nákladům. |
+| `CRYPTO` | **GARCH(1,1)** | červená | Volatilita závisí na předchozí volatilitě a šocích (α=0.15, β=0.80). Zachycuje volatility clustering – klidná období střídají bouřlivé fáze typické pro Bitcoin. |
+| `FOREX_IDX` | **Ornstein-Uhlenbeck** | zelená | Silná mean reversion (θ=0.12) – kurzy gravitují k dlouhodobé rovnovážné hodnotě. Mnohem silnější přitažlivost než u komodit. |
+
+## 7. Výstupy skriptu
+Po dokončení backtestу skript vygeneruje:
+- **Terminál** — několik sekcí výstupu:
+  - Souhrnná tabulka metrik pro každý asset
+  - Roční breakdown (výnos / win rate / Sharpe po letech)
+  - Aktuální signály a cenové hladiny
+  - Doporučené příkazy (Buy Limit, Stop-Loss, Take Profit)
+- **`chart_<asset>.png`** — individuální graf pro každý asset se dvěma sloupci:
+  - Levý sloupec (celé období): Cena + MA + BB + obchody + Monte Carlo predikce, Equity křivka, RSI, MACD, ATR
+  - Pravý sloupec (zoom posledních 6 měsíců): stejné panely přiblížené na konec dat
+- **`summary_comparison.png`** — souhrnný srovnávací graf všech assetů (výnosy vs B&H, Sharpe Ratio, Max Drawdown, Win Rate)
+- **`summary_table.png`** — souhrnná tabulka všech metrik jako PNG
+- **`signals.png`** — tabulka aktuálních signálů pro všechny assety
+- **`order_levels.png`** — tabulka doporučených cenových příkazů
+
+## 8. Disclaimer
 > **Upozornění:** Tento skript slouží výhradně k **vzdělávacím a analytickým účelům**.
 > Backtest na historických datech **nezaručuje budoucí výsledky**.
 > Výkonnost v minulosti ≠ výkonnost v budoucnosti.
