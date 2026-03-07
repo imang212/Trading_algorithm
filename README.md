@@ -208,12 +208,13 @@ Klíčovým rysem je, že **žádný indikátor sám o sobě nevydá signál**. 
 
 ### Stop-Loss a řízení pozice
 Při každém BUY je automaticky nastaven dynamický stop-loss:
-<img width="3585" height="1359" alt="signals" src="https://github.com/user-attachments/assets/60171474-3dac-47c1-9aaf-584c3b517be1" />
 
 ```
 stop_loss = vstupní_cena − ATR_SL_MULT × ATR(14)
 ```
 Pokud cena klesne pod tuto úroveň dříve, než přijde SELL signál, pozice se okamžitě uzavře jako **STOP-LOSS** obchod a omezí tak maximální ztrátu. Do každého obchodu je investováno **95 % dostupného kapitálu** (5 % zůstává jako rezerva na poplatky a skluz).
+
+<img width="3585" height="1359" alt="signals" src="https://github.com/user-attachments/assets/60171474-3dac-47c1-9aaf-584c3b517be1" />
 
 ## 5. Co je to backtest?
 Backtest je **historická simulace obchodní strategie**. Místo skutečného obchodování skript prochází historická data den po dni a aplikuje strategii, jako by se obchodovalo v reálném čase — ale na minulých datech.
