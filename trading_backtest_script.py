@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 # Configuration
 ASSETS = {
     # Komodity & futures
-    "Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "USDIDX": "DX-Y.NYB",
+    "Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "USDIDX": "DX-Y.NYB", "Bitcoin": "BTC-USD",
     # ETF
     "SP500": "SXR8.DE", "MSCIWorld": "EUNL.DE", "Nasdaq100": "CNDX.L",
     # Tech akcie
@@ -54,23 +54,18 @@ SLIPPAGE = 0.0005 # 0.05 %
 
 PROFILES = {
     "COMMODITY": dict(MA_SHORT=30, MA_LONG=75,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30, BB_PERIOD=25, BB_STD=2.5, MACD_FAST=12, MACD_SLOW=30, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=2.5),
+    "CRYPTO": dict(MA_SHORT=30, MA_LONG=75,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30, BB_PERIOD=25, BB_STD=3.5, MACD_FAST=12, MACD_SLOW=30, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=2.5),
     "FOREX_IDX": dict(MA_SHORT=40, MA_LONG=100, RSI_PERIOD=21, RSI_OB=65, RSI_OS=35, BB_PERIOD=30, BB_STD=1.8, MACD_FAST=14, MACD_SLOW=35, MACD_SIGNAL=9, ATR_PERIOD=21, ATR_SL_MULT=1.5),
     "TECH":      dict(MA_SHORT=20, MA_LONG=50,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30, BB_PERIOD=20, BB_STD=2.0, MACD_FAST=12, MACD_SLOW=26, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=2.0),
     "DEFENSIVE": dict(MA_SHORT=25, MA_LONG=60,  RSI_PERIOD=14, RSI_OB=65, RSI_OS=35, BB_PERIOD=20, BB_STD=1.8, MACD_FAST=12, MACD_SLOW=26, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=1.8),
 }
+
 # Přiřazení profilu každému assetu
 ASSET_PROFILES = {
-    "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "USDIDX": "FOREX_IDX", "SP500": "DEFENSIVE", "MSCIWorld": "DEFENSIVE", "Nasdaq100": "DEFENSIVE", 
+    "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "USDIDX": "FOREX_IDX", "Bitcoin": "CRYPTO", "SP500": "DEFENSIVE", "MSCIWorld": "DEFENSIVE", "Nasdaq100": "DEFENSIVE", 
     "MSFT": "TECH", "GOOGL": "TECH", "Apple": "TECH", "Tesla": "TECH", "Netflix": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", 
     "Coca-Cola": "DEFENSIVE", "CocaColaCCH": "DEFENSIVE", "NovoNordisk": "DEFENSIVE", "AgnicoEagle": "DEFENSIVE", "Moneta": "DEFENSIVE", "KomBanka": "DEFENSIVE",
 }
-## Parameters of indicators
-#MA_SHORT = 20; MA_LONG = 50
-#RSI_PERIOD = 14; RSI_OB = 70  # překoupený
-#RSI_OS = 30  # přeprodaný
-#BB_PERIOD = 20; BB_STD = 2.0
-#MACD_FAST = 12; MACD_SLOW = 26; MACD_SIGNAL = 9
-#ATR_PERIOD = 14; ATR_SL_MULT = 2.0 # Stop-loss = ATR * multiplikátor
 
 #  VÝPOČET INDIKÁTORŮ - MA Crossover, RSI, Bollinger Bands, MACD, ATR
 def compute_indicators(df: pd.DataFrame, p: dict) -> pd.DataFrame:
@@ -134,7 +129,7 @@ def generate_signals(df: pd.DataFrame, p: dict) -> pd.DataFrame:
     df.loc[df["sell_score"] >= 3, "signal"] = -1
     return df
 
-#  BACKTEST ENGINE
+#  BACKTEST ENGINE (final value, profit, Buy&Hold, Alpha, Win rate, Sharpe, Max Drawdown, Profit Factor, atd.)
 def run_backtest(df: pd.DataFrame, asset_name: str, p: dict) -> dict:
     df = df.copy()
     close = df["Close"].astype(float)
@@ -209,7 +204,140 @@ def run_backtest(df: pd.DataFrame, asset_name: str, p: dict) -> dict:
     max_dd = drawdown.min() * 100
     return {"asset": asset_name, "p": result_p, "final_value": final_val,  "total_return": total_return,  "bh_return": bh_return,  "num_trades": len(sell_trades), "win_rate": win_rate,  "avg_win": avg_win,  "avg_loss": avg_loss,  "profit_factor": profit_factor,  "sharpe": sharpe, "max_drawdown": max_dd,  "equity_df": equity_df,  "trades_df": trades_df,  "price_df": df, "avg_buy_score":  round(df["buy_score"].mean(), 2), "avg_sell_score": round(df["sell_score"].mean(), 2),}
 
-# VISUALIZATION
+# VISUALIZATION AND PREDICTION
+MC_DAYS        = 30     # horizont predikce (obchodní dny)
+MC_SIMULATIONS = 1000   # počet simulací
+
+MC_PROFILE_META = {
+    "DEFENSIVE": {"color": "#1565c0", "label": "Random Walk", "short": "RW"},
+    "TECH":      {"color": "#6a1b9a", "label": "RW + Earnings skoky", "short": "RW+E"},
+    "COMMODITY": {"color": "#e65100", "label": "GBM + Mean Reversion", "short": "GBM-MR"},
+    "CRYPTO":    {"color": "#b71c1c", "label": "GARCH volatilita", "short": "GARCH"},
+    "FOREX_IDX": {"color": "#1b5e20", "label": "Ornstein-Uhlenbeck", "short": "O-U"},
+}
+
+def _mc_random_walk(returns, last_price, n_sim, n_days, rng):
+    """DEFENSIVE, základ – prostý random walk."""
+    mu, sigma = returns.mean(), returns.std()
+    shocks = rng.normal(mu, sigma, size=(n_sim, n_days))
+    return last_price * np.cumprod(1 + shocks, axis=1)
+
+def _mc_random_walk_earnings(returns, last_price, n_sim, n_days, rng):
+    """TECH – random walk s náhodnými earnings skoky (~každých 63 dní, ±5-15%)."""
+    mu, sigma = returns.mean(), returns.std()
+    shocks = rng.normal(mu, sigma, size=(n_sim, n_days))
+    # Earnings přicházejí přibližně každý čtvrtletní cyklus
+    # V 30denním okně je ~48% šance na earnings – přidáme náhodný skok
+    for sim in range(n_sim):
+        if rng.random() < 0.48:
+            day = rng.integers(0, n_days)
+            jump = rng.normal(0, 0.08)   # průměrný earnings skok ±8 %
+            shocks[sim, day] += jump
+    return last_price * np.cumprod(1 + shocks, axis=1)
+
+def _mc_gbm_mean_reversion(close, last_price, n_sim, n_days, rng, lookback=252):
+    """COMMODITY – Geometric Brownian Motion s mean reversion (přitažlivost k dlouhodobému průměru)."""
+    returns = close.pct_change().dropna()
+    sigma = returns.std()
+    # Dlouhodobý průměr = SMA posledního roku
+    long_mean = float(close.iloc[-min(lookback, len(close)):].mean())
+    theta = 0.05    # rychlost návratu k průměru (vyšší = rychlejší)
+    paths = np.zeros((n_sim, n_days))
+    for t in range(n_days):
+        prev = last_price if t == 0 else paths[:, t-1]
+        # Drift: theta × (long_mean - aktuální cena) + náhodný šok
+        drift  = theta * (long_mean - prev) / last_price
+        shocks = rng.normal(drift, sigma, size=n_sim)
+        paths[:, t] = prev * (1 + shocks)
+    return paths
+
+def _mc_garch(returns, last_price, n_sim, n_days, rng):
+    """CRYPTO – GARCH(1,1): volatilita závisí na předchozí volatilitě i šocích.
+    Zachycuje volatility clustering typický pro krypto."""
+    mu = returns.mean()
+    # GARCH(1,1) parametry odhadnuté z dat (metoda momentů)
+    var_long = returns.var()
+    omega = var_long * 0.05    # dlouhodobá váha
+    alpha = 0.15               # váha posledního šoku (reakce na šok)
+    beta = 0.80               # persistence volatility
+    paths = np.zeros((n_sim, n_days))
+    for sim in range(n_sim):
+        h  = var_long   # počáteční rozptyl
+        ep = returns.iloc[-1] - mu   # poslední reziduál
+        price = last_price
+        for t in range(n_days):
+            h = omega + alpha * ep**2 + beta * h
+            h = max(h, 1e-8)
+            shock = rng.normal(mu, np.sqrt(h))
+            ep    = shock - mu
+            price = price * (1 + shock)
+            paths[sim, t] = max(price, 1e-3)
+    return paths
+
+def _mc_ornstein_uhlenbeck(close, last_price, n_sim, n_days, rng, lookback=252):
+    """FOREX_IDX – Ornstein-Uhlenbeck (mean reversion).
+    Měnové páry gravitují k dlouhodobé rovnováze – silnější přitažlivost než GBM."""
+    returns = close.pct_change().dropna()
+    sigma = returns.std()
+    mu_price = float(close.iloc[-min(lookback, len(close)):].mean())   # rovnovážná cena
+    theta = 0.12    # rychlost návratu (výrazně silnější než u komodit)
+    dt = 1.0
+    paths = np.zeros((n_sim, n_days))
+    for sim in range(n_sim):
+        price = last_price
+        for t in range(n_days):
+            drift = theta * (mu_price - price) * dt
+            shock = rng.normal(0, sigma * price * np.sqrt(dt))
+            price = price + drift + shock
+            paths[sim, t] = max(price, 1e-3)
+    return paths
+
+def monte_carlo_forecast(close: pd.Series, profile: str = "TECH", n_days: int = MC_DAYS, n_sim: int = MC_SIMULATIONS, lookback: int = 90):
+    """
+    Per-profil Monte Carlo simulace:
+      DEFENSIVE → Random Walk (GBM)
+      TECH      → Random Walk + náhodné earnings skoky
+      COMMODITY → GBM s mean reversion k dlouhodobému průměru
+      CRYPTO    → GARCH(1,1) s proměnlivou volatilitou
+      FOREX_IDX → Ornstein-Uhlenbeck silná mean reversion
+    """
+    returns = close.iloc[-lookback:].pct_change().dropna(); last_price = float(close.iloc[-1])
+    rng = np.random.default_rng(42)
+    if profile == "DEFENSIVE":
+        paths = _mc_random_walk(returns, last_price, n_sim, n_days, rng)
+    elif profile == "TECH":
+        paths = _mc_random_walk_earnings(returns, last_price, n_sim, n_days, rng)
+    elif profile == "COMMODITY":
+        paths = _mc_gbm_mean_reversion(close.iloc[-lookback:], last_price, n_sim, n_days, rng)
+    elif profile == "CRYPTO":
+        paths = _mc_garch(returns, last_price, n_sim, n_days, rng)
+    elif profile == "FOREX_IDX":
+        paths = _mc_ornstein_uhlenbeck(close.iloc[-lookback:], last_price, n_sim, n_days, rng)
+    else:
+        paths = _mc_random_walk(returns, last_price, n_sim, n_days, rng)
+    last_date = close.index[-1]
+    future_dates = pd.bdate_range(start=last_date + pd.Timedelta(days=1), periods=n_days)
+    return {
+        "dates":   future_dates,
+        "p10":     np.percentile(paths, 10,  axis=0),
+        "p25":     np.percentile(paths, 25,  axis=0),
+        "p50":     np.percentile(paths, 50,  axis=0),
+        "p75":     np.percentile(paths, 75,  axis=0),
+        "p90":     np.percentile(paths, 90,  axis=0),
+        "last":    last_price,
+        "profile": profile,
+    }
+
+def draw_monte_carlo(ax, close: pd.Series, profile: str = "TECH"):
+    """Nakreslí Monte Carlo vějíř na danou osu s barvou dle profilu."""
+    mc = monte_carlo_forecast(close, profile=profile); d = mc["dates"] 
+    meta = MC_PROFILE_META.get(profile, MC_PROFILE_META["TECH"]); color = meta["color"]; short = meta["short"]
+    ax.fill_between(d, mc["p10"], mc["p90"], alpha=0.10, color=color, label=f"MC 10–90 %")
+    ax.fill_between(d, mc["p25"], mc["p75"], alpha=0.22, color=color, label=f"MC 25–75 %")
+    ax.plot(d, mc["p50"], color=color, lw=1.8, ls="--", label=f"MC medián ({short}, {MC_DAYS}d)", zorder=4)
+    ax.axvline(close.index[-1], color=color, lw=1.0, ls=":", alpha=0.7)
+    ax.annotate(f"${mc['p50'][-1]:,.0f}", xy=(d[-1], mc["p50"][-1]), fontsize=7.5, color=color, va="center")
+
 def _draw_price_panel(ax, df, close, trades, p, zoom=False):
     """Kreslí panel s cenou, MA, BB a obchody. zoom=True = posledních 6 měsíců."""
     ax.plot(close.index, close.values, color="#1a1a2e", lw=1.2 if not zoom else 1.5, label="Cena", zorder=3)
@@ -241,24 +369,26 @@ def _draw_price_panel(ax, df, close, trades, p, zoom=False):
 def plot_asset(result: dict, save_path: str = None):
     df = result["price_df"]; eq = result["equity_df"]; trades = result["trades_df"]
     close  = df["Close"].astype(float)
-    name = result["asset"]
-    p = result["p"]
+    name = result["asset"]; p = result["p"]
     # Zoom okno – posledních 6 měsíců
     zoom_start = df.index[-1] - pd.DateOffset(months=6)
     df_z = df[df.index >= zoom_start]; close_z = close[close.index >= zoom_start]; eq_z = eq[eq.index >= zoom_start]
     ts = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
-    n_buy  = len(trades[trades["type"] == "BUY"]); n_sell = len(trades[trades["type"] == "SELL"]); n_stop = len(trades[trades["type"] == "STOP-LOSS"])
+    #n_buy  = len(trades[trades["type"] == "BUY"]); n_sell = len(trades[trades["type"] == "SELL"]); n_stop = len(trades[trades["type"] == "STOP-LOSS"])
     fig = plt.figure(figsize=(26, 18))
     fig.suptitle(f"{name}  {result.get('profile','')}  –  Backtest výsledky\n Vygenerováno: {ts}", fontsize=16, fontweight="bold", y=0.995)
     gs = gridspec.GridSpec(5, 2, hspace=0.55, wspace=0.08, height_ratios=[3, 1, 1, 1, 1], width_ratios=[2, 1])
     # Price + MA + BB + obchody
     ax1 = fig.add_subplot(gs[0, 0])
     _draw_price_panel(ax1, df, close, trades, p, zoom=False)
+    mc_profile = result.get("profile", "TECH")
+    mc_meta = MC_PROFILE_META.get(mc_profile, MC_PROFILE_META["TECH"])
+    draw_monte_carlo(ax1, close, profile=mc_profile)  
     ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-    ax1.set_title("Cena + MA + Bollinger Bands + Obchody  (celé období)", fontsize=10)
     # Price zoom     
     ax1z = fig.add_subplot(gs[0, 1])
     _draw_price_panel(ax1z, df_z, close_z, trades, p, zoom=True)
+    draw_monte_carlo(ax1z, close_z, profile=mc_profile)
     ax1z.xaxis.set_major_formatter(mdates.DateFormatter("%m/%y"))
     ax1z.set_title("Zoom – posledních 6 měsíců", fontsize=10, color="#1565c0")
     for spine in ax1z.spines.values():
@@ -351,16 +481,21 @@ def plot_asset(result: dict, save_path: str = None):
         spine.set_edgecolor("#1565c0"); spine.set_linewidth(1.5)
     ax5z.set_ylabel("")
     # Spodní osa levého sloupce – roční datumy
-    ax5.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
-    ax5.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
-    ax5.tick_params(axis="x", labelrotation=45, labelsize=8)
-    for lbl in ax5.get_xticklabels():
-        lbl.set_ha("right")
-    # Spodní osa pravého sloupce (zoom) – měsíční datumy
-    ax5z.xaxis.set_major_formatter(mdates.DateFormatter("%d %b %Y"))
-    ax5z.xaxis.set_major_locator(mdates.MonthLocator(interval=1))
+    for i in range(1, 6):
+        eval(f"ax{i}.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))")
+        eval(f"ax{i}.xaxis.set_major_locator(mdates.MonthLocator(interval=3))")
+        eval(f"ax{i}.tick_params(axis='x', labelrotation=45, labelsize=8)")
+        for lbl in eval(f"ax{i}.get_xticklabels()"):
+            lbl.set_ha("right")
+     # Spodní osa pravého sloupce (zoom) – měsíční datumy
+    for i in range(1, 6):
+        eval(f"ax{i}z.xaxis.set_major_formatter(mdates.DateFormatter('%d %b %Y'))")
+        eval(f"ax{i}z.xaxis.set_major_locator(mdates.MonthLocator(interval=1))")
+        eval(f"ax{i}z.tick_params(axis='x', labelrotation=45, labelsize=8)")
+        for lbl in eval(f"ax{i}z.get_xticklabels()"):   
+            lbl.set_ha("right")
     # Záhlaví sloupců
-    ax1.set_title("Cena + MA + Bollinger Bands + Obchody  (celé období)", fontsize=10)
+    ax1.set_title(f"Cena + MA + Bollinger Bands + Obchody  (celé období) | MC {MC_SIMULATIONS}× / {MC_DAYS}d  [{mc_meta['label']}]", fontsize=10)
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"  → Graf uložen: {save_path}")
@@ -485,92 +620,26 @@ def compute_yearly_breakdown(results: list) -> dict:
     Vrátí dict: { asset_name: { year: { return, win_rate, sharpe } } }
     """
     breakdown = {}
-
     for r in results:
-        eq     = r["equity_df"]["equity"]
-        trades = r["trades_df"]
-        name   = r["asset"]
-        breakdown[name] = {}
-
+        eq = r["equity_df"]["equity"]; trades = r["trades_df"]; name = r["asset"]; breakdown[name] = {}
         years = sorted(eq.index.year.unique())
         for yr in years:
             eq_yr = eq[eq.index.year == yr]
             if len(eq_yr) < 2:
                 continue
-
             # Výnos za rok
             yr_return = (eq_yr.iloc[-1] - eq_yr.iloc[0]) / eq_yr.iloc[0] * 100
-
             # Sharpe za rok (denní výnosy)
             daily_ret = eq_yr.pct_change().dropna()
             sharpe_yr = (daily_ret.mean() / daily_ret.std() * np.sqrt(252)
                          if daily_ret.std() > 0 else 0)
-
             # Win rate za rok
             tr_yr = trades[pd.to_datetime(trades["date"]).dt.year == yr]
             sell_yr = tr_yr[tr_yr["type"].isin(["SELL", "STOP-LOSS", "CLOSE"])]
             wins_yr  = sell_yr[sell_yr["pnl"] > 0]
             wr_yr    = len(wins_yr) / len(sell_yr) * 100 if len(sell_yr) > 0 else float("nan")
-
-            breakdown[name][yr] = {
-                "return":   yr_return,
-                "win_rate": wr_yr,
-                "sharpe":   sharpe_yr,
-                "trades":   len(sell_yr),
-            }
+            breakdown[name][yr] = {"return": yr_return,"win_rate": wr_yr,"sharpe": sharpe_yr,"trades": len(sell_yr),}
     return breakdown
-
-def print_yearly_breakdown(results: list):
-    """Vytiskne roční breakdown do terminálu."""
-    breakdown = compute_yearly_breakdown(results)
-    years     = sorted({yr for asset in breakdown.values() for yr in asset.keys()})
-    print("\n" + "=" * 80)
-    print("  ROČNÍ BREAKDOWN  –  Výnos / Win Rate / Sharpe")
-    print("=" * 80)
-    for r in results:
-        name = r["asset"]
-        data = breakdown.get(name, {})
-        if not data:
-            continue
-        print(f"\n  {name}  [{r.get('profile','')}]")
-        print(f"  {'Rok':<6}", end="")
-        for yr in years:
-            print(f"  {yr:>18}", end="")
-        print()
-        print(f"  {'':-<6}", end="")
-        for _ in years:
-            print(f"  {'':->18}", end="")
-        print()
-        # Výnos
-        print(f"  {'Výnos':<6}", end="")
-        for yr in years:
-            if yr in data:
-                v = data[yr]["return"]
-                mark = "▲" if v >= 0 else "▼"
-                print(f"  {mark} {v:>+7.1f} %      ", end="")
-            else:
-                print(f"  {'  –':>18}", end="")
-        print()
-        # Win rate
-        print(f"  {'WinR.':<6}", end="")
-        for yr in years:
-            if yr in data and not np.isnan(data[yr]["win_rate"]):
-                wr = data[yr]["win_rate"]
-                t  = data[yr]["trades"]
-                print(f"  {wr:>6.0f} % ({t:>2}ob.)  ", end="")
-            else:
-                print(f"  {'  –':>18}", end="")
-        print()
-        # Sharpe
-        print(f"  {'Sharpe':<6}", end="")
-        for yr in years:
-            if yr in data:
-                s = data[yr]["sharpe"]
-                print(f"  {s:>+8.2f}          ", end="")
-            else:
-                print(f"  {'  –':>18}", end="")
-        print()
-    print()
 
 def export_signals_png(results: list):
     """Exportuje aktuální signály a cenové hladiny do PNG tabulky."""
@@ -656,6 +725,104 @@ def export_signals_png(results: list):
     plt.tight_layout()
     plt.savefig(fname, dpi=150, bbox_inches="tight")
     print(f"  → Tabulka signálů exportována: {fname}")
+    plt.close()
+
+def export_order_levels_png(results: list):
+    """
+    PNG tabulka s doporučenými cenovými příkazy pro každý asset:
+      - Buy Limit  = BB lower + 0.5% buffer (čekáme na mírný odraz)
+      - Stop-Loss  = Buy Limit − ATR_SL_MULT × ATR
+      - Take Profit 1 = Buy Limit + 1× riziko (R:R 1:1)
+      - Take Profit 2 = BB upper              (R:R přirozený odpor)
+      - Risk USD   = (Buy Limit − Stop-Loss) × qty při $10 000 kapitálu
+    """
+    ts_label = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
+    fname    = f"order_levels.png"
+    rows = []
+    for r in results:
+        df = r["price_df"]; p = r["p"]; name = r["asset"]; last = df.iloc[-1]
+        price     = float(df["Close"].astype(float).iloc[-1])
+        atr       = float(last["ATR"])      if not pd.isna(last["ATR"])      else 0
+        bb_upper  = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price * 1.05
+        bb_lower  = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price * 0.95
+        bb_pct    = float(last["BB_pct"])   if not pd.isna(last["BB_pct"])   else 0.5
+        ema_short = float(last["EMA_short"]) if not pd.isna(last["EMA_short"]) else price
+        ema_long  = float(last["EMA_long"])  if not pd.isna(last["EMA_long"])  else price
+        macd      = float(last["MACD"])      if not pd.isna(last["MACD"])      else 0
+        macd_sig  = float(last["MACD_sig"])  if not pd.isna(last["MACD_sig"])  else 0
+        sma_short = float(last["SMA_short"]) if not pd.isna(last["SMA_short"]) else price
+        rsi       = float(last["RSI"])       if not pd.isna(last["RSI"])       else 50
+        rsi_mid   = (p["RSI_OB"] + p["RSI_OS"]) / 2
+        # Celkový signál
+        conds_buy = [ema_short > ema_long, rsi < rsi_mid, bb_pct < 0.4, macd > macd_sig, price > sma_short]
+        buy_score = sum(conds_buy)
+        if buy_score >= 3:
+            signal = "BUY"
+        elif sum(not c for c in conds_buy) >= 3:
+            signal = "SELL"
+        else:
+            signal = "NEU"
+        # Cenové hladiny
+        buffer = 0.005                              # 0.5% buffer nad BB lower
+        buy_limit = bb_lower * (1 + buffer)            # Buy Limit = BB lower + buffer
+        stop_loss = buy_limit - p["ATR_SL_MULT"] * atr # Stop pod buy limitem
+        risk_per = buy_limit - stop_loss               # Riziko na 1 kus
+        tp1 = buy_limit + risk_per                # TP1 = R:R 1:1
+        tp2 = bb_upper                            # TP2 = BB upper
+        # Risk v USD při kapitálu INITIAL_CAP
+        qty_est    = (INITIAL_CAP * 0.95) / buy_limit if buy_limit > 0 else 0
+        risk_usd   = risk_per * qty_est
+        # Procentuální vzdálenosti od aktuální ceny
+        bl_pct  = (buy_limit  - price) / price * 100
+        sl_pct  = (stop_loss  - price) / price * 100
+        tp1_pct = (tp1        - price) / price * 100
+        tp2_pct = (tp2        - price) / price * 100
+        rr1 = abs((tp1 - buy_limit) / risk_per) if risk_per > 0 else 0
+        rr2 = abs((tp2 - buy_limit) / risk_per) if risk_per > 0 else 0
+        rows.append([name,r.get("profile", "-"), f"${price:,.2f}", signal, f"${buy_limit:,.2f} ({bl_pct:+.1f}%)", f"${stop_loss:,.2f} ({sl_pct:+.1f}%)", f"${tp1:,.2f} ({tp1_pct:+.1f}%) 1:{rr1:.1f}", f"${tp2:,.2f} ({tp2_pct:+.1f}%) 1:{rr2:.1f}", f"${risk_usd:,.0f}",])
+    headers = [
+        "Asset", "Profil", "Cena", "Signal",
+        "Buy Limit (BB low+0.5%)",
+        "Stop-Loss (ATR x mult.)",
+        "Take Profit 1 (R:R 1:1)",
+        "Take Profit 2 (BB upper)",
+        "Risk/obchod USD"
+    ]
+    n_rows = len(rows); n_cols = len(headers)
+    fig, ax = plt.subplots(figsize=(26, 1.6 + n_rows * 0.72))
+    ax.axis("off")
+    signal_bg = {"BUY": "#d4edda", "SELL": "#f8d7da", "NEU": "#fff3cd"}
+    cell_colors = []
+    for i, row in enumerate(rows):
+        bg = "#EEF2F7" if i % 2 == 0 else "#FFFFFF"
+        row_c = []
+        for j in range(n_cols):
+            if j == 3:
+                row_c.append(signal_bg.get(row[j], bg))
+            elif j == 4:   # Buy Limit – zelenkavá
+                row_c.append("#e8f5e9")
+            elif j == 5:   # Stop-Loss – červenkavá
+                row_c.append("#fdecea")
+            elif j in (6, 7):   # Take Profit – modrá
+                row_c.append("#e3f2fd")
+            elif j == 8:   # Risk – žlutá
+                row_c.append("#fffde7")
+            else:
+                row_c.append(bg)
+        cell_colors.append(row_c)
+    col_colors = ["#1E50A0"] * n_cols
+    tbl = ax.table(cellText=rows, colLabels=headers, cellColours=cell_colors, colColours=col_colors, cellLoc="center", loc="center",)
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(8.5)
+    tbl.scale(1, 2.8)
+    for j in range(n_cols):
+        tbl[0, j].set_text_props(color="white", fontweight="bold")
+    for i in range(1, n_rows + 1):
+        tbl[i, 3].set_text_props(fontweight="bold")
+    fig.suptitle(fig.suptitle(f"DOPORUCENE CENOVE PRIKAZY  |  Vygenerovano: {ts_label}  | Buy Limit = BB low+0.5% | SL = BuyLim - ATR x mult. | TP1 = R:R 1:1 | TP2 = BB upper", fontsize=10, fontweight="bold", y=0.99, color="#1E50A0"))
+    plt.tight_layout()
+    plt.savefig(fname, dpi=150, bbox_inches="tight")
+    print(f"  -> Tabulka prikazů exportována: {fname}")
     plt.close()
 
 def print_current_signals(results: list):
@@ -809,12 +976,10 @@ def main():
     #print_current_signals(results)
     export_signals_png(results)
     export_table_png(table, headers, results)
+    export_order_levels_png(results)    
     # Souhrnný srovnávací graf
     plot_summary(results)
     print("\n  Hotovo! Grafy jsou uloženy jako PNG soubory.")
-    print(" Každý asset má vlastní chart_<jméno>.png")
-    print(" Celkové srovnání: summary_comparison.png\n")
-    print("    Souhrnná tabulka: summary_table_<timestamp>.png\n")
-
+    
 if __name__ == "__main__":
     main()
