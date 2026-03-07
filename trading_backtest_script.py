@@ -26,7 +26,7 @@ ASSETS = {
     # Komodity & futures
     "Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "USDIDX": "DX-Y.NYB",
     # ETF
-    "SP500": "SXR8.DE", "MSCIWorld": "EUNL.DE",
+    "SP500": "SXR8.DE", "MSCIWorld": "EUNL.DE", "Nasdaq100": "CNDX.L",
     # Tech akcie
     "MSFT": "MSFT", "GOOGL": "GOOGL", "Apple": "AAPL", "Tesla": "TSLA", "Netflix": "NFLX", "ORCL": "ORCL", "NVDA": "NVDA", "AMD": "AMD", "Spotify": "SPOT",
     # Defenzivní akcie
@@ -53,22 +53,14 @@ SLIPPAGE = 0.0005 # 0.05 %
 #    pomalejší indikátory, konzervativní stop-loss.
 
 PROFILES = {
-    "COMMODITY": dict(MA_SHORT=30, MA_LONG=75,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30,
-                      BB_PERIOD=25, BB_STD=2.5, MACD_FAST=12, MACD_SLOW=30, MACD_SIGNAL=9,
-                      ATR_PERIOD=14, ATR_SL_MULT=2.5),
-    "FOREX_IDX": dict(MA_SHORT=40, MA_LONG=100, RSI_PERIOD=21, RSI_OB=65, RSI_OS=35,
-                      BB_PERIOD=30, BB_STD=1.8, MACD_FAST=14, MACD_SLOW=35, MACD_SIGNAL=9,
-                      ATR_PERIOD=21, ATR_SL_MULT=1.5),
-    "TECH":      dict(MA_SHORT=20, MA_LONG=50,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30,
-                      BB_PERIOD=20, BB_STD=2.0, MACD_FAST=12, MACD_SLOW=26, MACD_SIGNAL=9,
-                      ATR_PERIOD=14, ATR_SL_MULT=2.0),
-    "DEFENSIVE": dict(MA_SHORT=25, MA_LONG=60,  RSI_PERIOD=14, RSI_OB=65, RSI_OS=35,
-                      BB_PERIOD=20, BB_STD=1.8, MACD_FAST=12, MACD_SLOW=26, MACD_SIGNAL=9,
-                      ATR_PERIOD=14, ATR_SL_MULT=1.8),
+    "COMMODITY": dict(MA_SHORT=30, MA_LONG=75,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30, BB_PERIOD=25, BB_STD=2.5, MACD_FAST=12, MACD_SLOW=30, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=2.5),
+    "FOREX_IDX": dict(MA_SHORT=40, MA_LONG=100, RSI_PERIOD=21, RSI_OB=65, RSI_OS=35, BB_PERIOD=30, BB_STD=1.8, MACD_FAST=14, MACD_SLOW=35, MACD_SIGNAL=9, ATR_PERIOD=21, ATR_SL_MULT=1.5),
+    "TECH":      dict(MA_SHORT=20, MA_LONG=50,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30, BB_PERIOD=20, BB_STD=2.0, MACD_FAST=12, MACD_SLOW=26, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=2.0),
+    "DEFENSIVE": dict(MA_SHORT=25, MA_LONG=60,  RSI_PERIOD=14, RSI_OB=65, RSI_OS=35, BB_PERIOD=20, BB_STD=1.8, MACD_FAST=12, MACD_SLOW=26, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=1.8),
 }
 # Přiřazení profilu každému assetu
 ASSET_PROFILES = {
-    "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "USDIDX": "FOREX_IDX", 
+    "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "USDIDX": "FOREX_IDX", "SP500": "DEFENSIVE", "MSCIWorld": "DEFENSIVE", "Nasdaq100": "DEFENSIVE", 
     "MSFT": "TECH", "GOOGL": "TECH", "Apple": "TECH", "Tesla": "TECH", "Netflix": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", 
     "Coca-Cola": "DEFENSIVE", "CocaColaCCH": "DEFENSIVE", "NovoNordisk": "DEFENSIVE", "AgnicoEagle": "DEFENSIVE", "Moneta": "DEFENSIVE", "KomBanka": "DEFENSIVE",
 }
@@ -814,7 +806,7 @@ def main():
     best = max(results, key=lambda r: r["total_return"])
     print(f"\n Nejlepší asset: {best['asset']}" f"(výnos {best['total_return']:+.1f} %)")
     #print_yearly_breakdown(results)
-    print_current_signals(results)
+    #print_current_signals(results)
     export_signals_png(results)
     export_table_png(table, headers, results)
     # Souhrnný srovnávací graf

@@ -109,6 +109,26 @@ kde  α = 2 / (perioda + 1)
 **Signál:**
 - `EMA_short > EMA_long` → krátkodobý trend roste nad dlouhodobý → **BUY skóre**
 - `EMA_short < EMA_long` → krátkodobý trend klesl pod dlouhodobý → **SELL skóre**
+  
+**SMA 20 (krátkodobý trend):**
+
+Průměr posledních 20 obchodních dní = přibližně 1 měsíc. Říká ti, jak si vede cena v krátkodobém horizontu.
+- Cena nad SMA20 → krátkodobý momentum je bullish, trh roste
+- Cena pod SMA20 → krátkodobý momentum je bearish, trh klesá
+- SMA20 funguje jako dynamická podpora/odpor – cena se k němu často vrací
+
+**SMA 50 (střednědobý trend):**
+
+Průměr posledních 50 obchodních dní = přibližně 2.5 měsíce. Sledují ho hlavně institucionální investoři.
+- Cena nad SMA50 → střednědobý trend je zdravý
+- Cena pod SMA50 → trh je ve střednědobém downtrend
+- Prolomení SMA50 je považováno za silnější signál než SMA20
+
+**Golden Cross a Death Cross:**
+
+To je to nejdůležitější na kombinaci SMA20/SMA50:
+- Golden Cross:  SMA20 překříží SMA50 ZDOLA NAHORU  → silný BUY signál
+- Death Cross:   SMA20 překříží SMA50 SHORA DOLŮ    → silný SELL signál
 
 ### 3.2 RSI – Relative Strength Index
 **RSI** měří sílu a hybnost cenových pohybů na škále 0–100. Porovnává průměrné zisky a průměrné ztráty za sledované období a identifikuje zóny překoupenosti nebo přeprodanosti.
@@ -129,6 +149,12 @@ kde  RS = průměrný zisk za N dní / průměrná ztráta za N dní
 - `RSI > 50` → cena roste rychle, hybnost může slábnout → **SELL skóre**
 
 > Poznámka: hranice 70/30 slouží pro vizualizaci v grafu, strategie používá střední linii 50.
+>
+**Co hledat:**
+- RSI klesne pod 30 → trh je přeprodaný, cena klesla příliš rychle → potenciální odraz nahoru → hledáš BUY
+- RSI vystoupí nad 70 → trh je překoupený, cena rostla příliš rychle → potenciální obrat dolů → hledáš SELL
+- RSI překříží linku 50 zdola nahoru → potvrzení rostoucího trendu → BUY signál
+- RSI překříží linku 50 shora dolů → potvrzení klesajícího trendu → SELL signál
 
 ### 3.3 Bollinger Bands
 **Bollingerova pásma** se skládají ze tří čar: středového klouzavého průměru (SMA) a dvou pásem vzdálených N násobků směrodatné odchylky (σ). Pásma se rozšiřují při vysoké volatilitě a zužují při nízké.
@@ -147,6 +173,14 @@ BB_pct   = (cena − BB_lower) / (BB_upper − BB_lower)   →  hodnota 0–1
 **Signál:**
 - `BB_pct < 0.4` → cena blízko dolního pásma = potenciálně podhodnocená → **BUY skóre**
 - `BB_pct > 0.6` → cena blízko horního pásma = potenciálně předražená → **SELL skóre**
+
+**Co hledat:**
+- Cena se dotkne dolního pásma → statisticky podhodnocená → potenciální BUY
+- Cena se dotkne horního pásma → statisticky předražená → potenciální SELL
+- Pásma se zužují (squeeze) → trh je klidný, hromadí se energie → brzy přijde velký pohyb, ale nevíš jakým směrem
+- Pásma se rozšiřují → trh je ve volatile fázi, trend je silný
+- Cena "jede podél horního pásma" → velmi silný uptend, nesell příliš brzy
+- BB% (ve skriptu) = 0 znamená cena na dolním pásmu, 1 = na horním pásmu, 0.5 = uprostřed
 
 ### 3.4 MACD
 **MACD** (Moving Average Convergence/Divergence) měří hybnost a sílu trendu porovnáním dvou exponenciálních klouzavých průměrů.
@@ -167,6 +201,16 @@ Histogram = MACD − Signal
 - `MACD > Signal` → rostoucí hybnost → **BUY skóre**
 - `MACD < Signal` → klesající hybnost → **SELL skóre**
 
+**Co hledat:**
+- MACD překříží Signal zdola nahoru → BUY signál (hybnost roste)
+- MACD překříží Signal shora dolů → SELL signál (hybnost klesá)
+- Histogram roste → trend sílí, drž pozici
+- Histogram se zmenšuje → trend slábne, připrav se na výstup
+- MACD nad nulou → celkový trend je bullish
+- MACD pod nulou → celkový trend je bearish
+
+Zlaté pravidlo: MACD je lagging indikátor – potvrzuje trend, který už začal. Nikdy nebude signalizovat úplně na vrcholu ani dně, ale filtruje falešné pohyby.
+
 ### 3.5 ATR – Average True Range
 **ATR** měří průměrnou denní volatilitu (rozkmit ceny). Na rozdíl od ostatních indikátorů ATR **neříká směr** – říká, o kolik se cena typicky pohybuje za den. Ve skriptu slouží primárně pro nastavení dynamického stop-lossu.
 
@@ -181,9 +225,11 @@ Stop-Loss = vstupní_cena − ATR_SL_MULT × ATR
 | `ATR_PERIOD` | `14` | Počet dní pro průměrování True Range. Standardní hodnota doporučená tvůrcem Wilderem. |
 | `ATR_SL_MULT` | `2.0` | Multiplikátor ATR pro stop-loss. Hodnota 2 = stop-loss je 2× průměrný denní rozkmit pod vstupem. Nižší → agresivnější (více stop-lossů). Vyšší → konzervativnější. |
 
-**Interpretace:**
-- Vysoký ATR → velká volatilita → stop-loss musí být vzdálenější, aby ho šum nevyvolal
-- Nízký ATR → klidný trh → stop-loss může být blíže vstupní ceně
+**Co hledat:**
+- Vysoký ATR → trh je nervózní, velké pohyby → stop-loss musí být vzdálenější, jinak tě vyhodí šum
+- Nízký ATR → klidný trh → stop-loss může být blíže na vstupní ceně, risk je menší
+- ATR náhle skočí nahoru → přišla velká zpráva (earnings, FED, geopolitika) → pozor na zvýšené riziko
+- ATR dlouhodobě klesá → trh usíná, blíží se velký pohyb (podobně jako BB squeeze)
 
 ## 4. Kombinovaná obchodní strategie
 Klíčovým rysem je, že **žádný indikátor sám o sobě nevydá signál**. Každý indikátor přispěje ke skóre BUY nebo SELL, a obchod nastane až tehdy, když **alespoň 3 ze 5 indikátorů souhlasí**. Tím se výrazně snižuje počet falešných signálů.
