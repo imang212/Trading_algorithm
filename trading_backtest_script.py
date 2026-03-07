@@ -22,7 +22,17 @@ import yfinance as yf
 from datetime import datetime, timedelta
 
 # Configuration
-ASSETS = {"Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "USDIDX": "DX-Y.NYB", "MSFT": "MSFT", "GOOGL": "GOOGL", "Netflix": "NFLX", "Coca-Cola": "KO", "AgnicoEagle": "AEM", "NovoNordisk": "NVO", "Moneta": "MONET.PR", "ORCL": "ORCL", "NVDA": "NVDA", "AMD": "AMD", "Spotify": "SPOT",}
+ASSETS = {
+    # Komodity & futures
+    "Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "USDIDX": "DX-Y.NYB",
+    # ETF
+    "SP500": "SXR8.DE", "MSCIWorld": "EUNL.DE",
+    # Tech akcie
+    "MSFT": "MSFT", "GOOGL": "GOOGL", "Apple": "AAPL", "Tesla": "TSLA", "Netflix": "NFLX", "ORCL": "ORCL", "NVDA": "NVDA", "AMD": "AMD", "Spotify": "SPOT",
+    # Defenzivní akcie
+    "Coca-Cola": "KO", "CocaColaCCH": "CCH.L", "AgnicoEagle": "AEM", "NovoNordisk": "NVO", "Moneta": "MONET.PR", "KomBanka": "KOMB.PR",
+}
+
 START_DATE = "2021-01-01"; END_DATE = datetime.today().strftime("%Y-%m-%d")
 INITIAL_CAP = 10_000 # USD na každý asset
 COMMISSION = 0.001 # 0.1 % za obchod
@@ -57,7 +67,11 @@ PROFILES = {
                       ATR_PERIOD=14, ATR_SL_MULT=1.8),
 }
 # Přiřazení profilu každému assetu
-ASSET_PROFILES = {"Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "USDIDX": "FOREX_IDX", "MSFT": "TECH", "GOOGL": "TECH", "Netflix": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", "Coca-Cola": "DEFENSIVE", "NovoNordisk": "DEFENSIVE", "AgnicoEagle": "DEFENSIVE", "Moneta": "DEFENSIVE",}
+ASSET_PROFILES = {
+    "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "USDIDX": "FOREX_IDX", 
+    "MSFT": "TECH", "GOOGL": "TECH", "Apple": "TECH", "Tesla": "TECH", "Netflix": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", 
+    "Coca-Cola": "DEFENSIVE", "CocaColaCCH": "DEFENSIVE", "NovoNordisk": "DEFENSIVE", "AgnicoEagle": "DEFENSIVE", "Moneta": "DEFENSIVE", "KomBanka": "DEFENSIVE",
+}
 ## Parameters of indicators
 #MA_SHORT = 20; MA_LONG = 50
 #RSI_PERIOD = 14; RSI_OB = 70  # překoupený
@@ -652,6 +666,87 @@ def export_signals_png(results: list):
     print(f"  → Tabulka signálů exportována: {fname}")
     plt.close()
 
+def print_current_signals(results: list):
+    """
+    Pro každý asset zobrazí aktuální stav všech 5 indikátorů
+    a vypočítá konkrétní cenové hladiny:
+      - BUY zóna       (aktuální cena pokud BUY signál aktivní, jinak cena kde by se aktivoval)
+      - Stop-Loss      (vstupní cena − ATR_SL_MULT × ATR)
+      - SELL target    (Bollinger Band upper = přirozený profit target)
+      - Take Profit    (vstupní cena + 2 × ATR_SL_MULT × ATR  – symetrický R:R 1:2)
+    """
+    ts = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
+    print("\n" + "=" * 72)
+    print(f"  AKTUÁLNÍ SIGNÁLY A CENOVÉ HLADINY  –  {ts}")
+    print("=" * 72)
+    for r in results:
+        df = r["price_df"]; p = r["p"]; name = r["asset"]; last = df.iloc[-1]
+        price      = float(df["Close"].astype(float).iloc[-1])
+        atr        = float(last["ATR"]) if not pd.isna(last["ATR"]) else 0
+        rsi        = float(last["RSI"]) if not pd.isna(last["RSI"]) else 50
+        bb_pct     = float(last["BB_pct"]) if not pd.isna(last["BB_pct"]) else 0.5
+        bb_upper   = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price
+        bb_lower   = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price
+        macd       = float(last["MACD"])     if not pd.isna(last["MACD"])     else 0
+        macd_sig   = float(last["MACD_sig"]) if not pd.isna(last["MACD_sig"]) else 0
+        ema_short  = float(last["EMA_short"]) if not pd.isna(last["EMA_short"]) else price
+        ema_long   = float(last["EMA_long"])  if not pd.isna(last["EMA_long"])  else price
+        sma_short  = float(last["SMA_short"]) if not pd.isna(last["SMA_short"]) else price
+        rsi_mid    = (p["RSI_OB"] + p["RSI_OS"]) / 2
+        # Stav každého indikátoru
+        conds_buy = {
+            "MA Crossover": ema_short > ema_long,
+            "RSI":          rsi < rsi_mid,
+            "Bollinger":    bb_pct < 0.4,
+            "MACD":         macd > macd_sig,
+            "ATR trend":    price > sma_short,
+        }
+        buy_score  = sum(conds_buy.values())
+        sell_score = sum(not v for v in conds_buy.values())
+        if buy_score >= 3:
+            signal_str = "✅  AKTIVNÍ BUY SIGNÁL"
+            signal_col = "BUY"
+        elif sell_score >= 3:
+            signal_str = "🔴  AKTIVNÍ SELL SIGNÁL"
+            signal_col = "SELL"
+        else:
+            signal_str = "⚪  NEUTRÁLNÍ"
+            signal_col = "NEU"
+        # Cenové hladiny
+        stop_loss   = price - p["ATR_SL_MULT"] * atr
+        take_profit = price + 2 * p["ATR_SL_MULT"] * atr   # R:R 1:2
+        sell_target = bb_upper                               # BB horní pásmo
+        buy_zone_lo = bb_lower                               # BB dolní pásmo
+        buy_zone_hi = price
+        print(f"\n  {'─'*68}")
+        print(f"  {name:<14} [{r.get('profile',''):10s}]   Cena: ${price:>10.2f}   {signal_str}")
+        print(f"  {'─'*68}")
+        print(f"  {'Indikátor':<16} {'Hodnota':>12}   {'BUY?':^5}   {'Detail'}")
+        print(f"  {'':-<16} {'':-<12}   {'':-<5}   {'':-<30}")
+        details = {
+            "MA Crossover": (f"EMA{p['MA_SHORT']}={'>' if ema_short>ema_long else '<'}EMA{p['MA_LONG']}", f"EMA{p['MA_SHORT']}={ema_short:.2f}  EMA{p['MA_LONG']}={ema_long:.2f}"),
+            "RSI":          (f"{rsi:.1f}", f"< {rsi_mid:.0f} pro BUY  |  > {rsi_mid:.0f} pro SELL"),
+            "Bollinger":    (f"BB%={bb_pct:.2f}", f"BB lower={bb_lower:.2f}  BB upper={bb_upper:.2f}"),
+            "MACD":         (f"{'MACD>Sig' if macd>macd_sig else 'MACD<Sig'}", f"MACD={macd:.3f}  Signal={macd_sig:.3f}"),
+            "ATR trend":    (f"{'cena>SMA' if price>sma_short else 'cena<SMA'}", f"Cena={price:.2f}  SMA{p['MA_SHORT']}={sma_short:.2f}"),
+        }
+        for ind, is_buy in conds_buy.items():
+            val, det = details[ind]
+            icon = "✅" if is_buy else "🔴"
+            print(f"  {ind:<16} {val:>12}   {icon}     {det}")
+        print(f"  {'─'*68}")
+        print(f"  BUY skóre: {buy_score}/5   SELL skóre: {sell_score}/5")
+        print(f"  {'─'*68}")
+        print(f"  📈  BUY zóna:      ${buy_zone_lo:>10.2f}  –  ${buy_zone_hi:.2f}  (BB lower – aktuální cena)")
+        print(f"  🛑  Stop-Loss:     ${stop_loss:>10.2f}           ({p['ATR_SL_MULT']}× ATR={atr:.2f} pod cenou)")
+        sl_pct = (price - stop_loss) / price * 100
+        tp_pct = (take_profit - price) / price * 100
+        st_pct = (sell_target - price) / price * 100
+        print(f"                              ({sl_pct:.1f} % pod aktuální cenou)")
+        print(f"  🎯  Take Profit:   ${take_profit:>10.2f}           (+{tp_pct:.1f} %, R:R 1:2)")
+        print(f"  📉  SELL target:   ${sell_target:>10.2f}           (+{st_pct:.1f} %, BB upper)")
+    print()
+
 #  HLAVNÍ PROGRAMs
 def main():
     print("  MULTI-ASSET TRADING ALGORITHM BACKTEST")
@@ -719,6 +814,7 @@ def main():
     best = max(results, key=lambda r: r["total_return"])
     print(f"\n Nejlepší asset: {best['asset']}" f"(výnos {best['total_return']:+.1f} %)")
     #print_yearly_breakdown(results)
+    print_current_signals(results)
     export_signals_png(results)
     export_table_png(table, headers, results)
     # Souhrnný srovnávací graf
