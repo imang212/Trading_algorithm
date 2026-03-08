@@ -54,7 +54,7 @@ SLIPPAGE = 0.0005 # 0.05 %
 
 PROFILES = {
     "COMMODITY": dict(MA_SHORT=30, MA_LONG=75,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30, BB_PERIOD=25, BB_STD=2.5, MACD_FAST=12, MACD_SLOW=30, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=2.5),
-    "CRYPTO": dict(MA_SHORT=30, MA_LONG=75,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30, BB_PERIOD=25, BB_STD=3.5, MACD_FAST=12, MACD_SLOW=30, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=2.5),
+    "CRYPTO":    dict(MA_SHORT=30, MA_LONG=75,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30, BB_PERIOD=25, BB_STD=3.5, MACD_FAST=12, MACD_SLOW=30, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=2.5),
     "FOREX_IDX": dict(MA_SHORT=40, MA_LONG=100, RSI_PERIOD=21, RSI_OB=65, RSI_OS=35, BB_PERIOD=30, BB_STD=1.8, MACD_FAST=14, MACD_SLOW=35, MACD_SIGNAL=9, ATR_PERIOD=21, ATR_SL_MULT=1.5),
     "TECH":      dict(MA_SHORT=20, MA_LONG=50,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30, BB_PERIOD=20, BB_STD=2.0, MACD_FAST=12, MACD_SLOW=26, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=2.0),
     "DEFENSIVE": dict(MA_SHORT=25, MA_LONG=60,  RSI_PERIOD=14, RSI_OB=65, RSI_OS=35, BB_PERIOD=20, BB_STD=1.8, MACD_FAST=12, MACD_SLOW=26, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=1.8),
@@ -647,26 +647,23 @@ def export_signals_png(results: list):
     fname    = f"signals.png"
     rows = []
     for r in results:
-        df = r["price_df"]
-        p = r["p"]
-        name = r["asset"]
+        df = r["price_df"]; p = r["p"]; name = r["asset"]
         last = df.iloc[-1]
         price = float(df["Close"].astype(float).iloc[-1])
-        atr       = float(last["ATR"])      if not pd.isna(last["ATR"])      else 0
-        rsi       = float(last["RSI"])      if not pd.isna(last["RSI"])      else 50
-        bb_pct    = float(last["BB_pct"])   if not pd.isna(last["BB_pct"])   else 0.5
-        bb_upper  = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price
-        bb_lower  = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price
-        macd      = float(last["MACD"])     if not pd.isna(last["MACD"])     else 0
-        macd_sig  = float(last["MACD_sig"]) if not pd.isna(last["MACD_sig"]) else 0
+        atr = float(last["ATR"]) if not pd.isna(last["ATR"]) else 0
+        rsi = float(last["RSI"]) if not pd.isna(last["RSI"]) else 50
+        bb_pct = float(last["BB_pct"]) if not pd.isna(last["BB_pct"]) else 0.5
+        bb_upper = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price
+        bb_lower = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price
+        macd = float(last["MACD"]) if not pd.isna(last["MACD"]) else 0
+        macd_sig = float(last["MACD_sig"]) if not pd.isna(last["MACD_sig"]) else 0
         ema_short = float(last["EMA_short"]) if not pd.isna(last["EMA_short"]) else price
-        ema_long  = float(last["EMA_long"])  if not pd.isna(last["EMA_long"])  else price
+        ema_long = float(last["EMA_long"]) if not pd.isna(last["EMA_long"]) else price
         sma_short = float(last["SMA_short"]) if not pd.isna(last["SMA_short"]) else price
-        rsi_mid   = (p["RSI_OB"] + p["RSI_OS"]) / 2
+        rsi_mid = (p["RSI_OB"] + p["RSI_OS"]) / 2
 
         conds_buy = {"MA": ema_short > ema_long,"RSI": rsi < rsi_mid,"BB": bb_pct < 0.4,"MACD": macd > macd_sig,"ATR": price > sma_short,}
-        buy_score  = sum(conds_buy.values())
-        sell_score = sum(not v for v in conds_buy.values())
+        buy_score  = sum(conds_buy.values()); sell_score = sum(not v for v in conds_buy.values())
         if buy_score >= 3:
             signal = "BUY"
         elif sell_score >= 3:
@@ -681,7 +678,7 @@ def export_signals_png(results: list):
         tp_pct = (take_profit - price) / price * 100
         st_pct = (sell_target - price) / price * 100
         def _ic(v): return "✔" if v else "×"
-        ind_icons = f'{_ic(conds_buy["MA"])} {_ic(conds_buy["RSI"])} {_ic(conds_buy["BB"])} {_ic(conds_buy["MACD"])} {_ic(conds_buy["ATR"])}'
+        ind_icons = f'{_ic(conds_buy["MA"])}    {_ic(conds_buy["RSI"])}    {_ic(conds_buy["BB"])}    {_ic(conds_buy["MACD"])}    {_ic(conds_buy["ATR"])}'
         rows.append([
             name, 
             r.get("profile", "-"), 
@@ -737,22 +734,22 @@ def export_order_levels_png(results: list):
       - Risk USD   = (Buy Limit − Stop-Loss) × qty při $10 000 kapitálu
     """
     ts_label = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
-    fname    = f"order_levels.png"
+    fname = f"order_levels.png"
     rows = []
     for r in results:
         df = r["price_df"]; p = r["p"]; name = r["asset"]; last = df.iloc[-1]
-        price     = float(df["Close"].astype(float).iloc[-1])
-        atr       = float(last["ATR"])      if not pd.isna(last["ATR"])      else 0
-        bb_upper  = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price * 1.05
-        bb_lower  = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price * 0.95
-        bb_pct    = float(last["BB_pct"])   if not pd.isna(last["BB_pct"])   else 0.5
+        price = float(df["Close"].astype(float).iloc[-1])
+        atr = float(last["ATR"]) if not pd.isna(last["ATR"]) else 0
+        bb_upper = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price * 1.05
+        bb_lower = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price * 0.95
+        bb_pct = float(last["BB_pct"]) if not pd.isna(last["BB_pct"]) else 0.5
         ema_short = float(last["EMA_short"]) if not pd.isna(last["EMA_short"]) else price
-        ema_long  = float(last["EMA_long"])  if not pd.isna(last["EMA_long"])  else price
-        macd      = float(last["MACD"])      if not pd.isna(last["MACD"])      else 0
-        macd_sig  = float(last["MACD_sig"])  if not pd.isna(last["MACD_sig"])  else 0
+        ema_long = float(last["EMA_long"]) if not pd.isna(last["EMA_long"]) else price
+        macd = float(last["MACD"]) if not pd.isna(last["MACD"]) else 0
+        macd_sig = float(last["MACD_sig"])  if not pd.isna(last["MACD_sig"])  else 0
         sma_short = float(last["SMA_short"]) if not pd.isna(last["SMA_short"]) else price
-        rsi       = float(last["RSI"])       if not pd.isna(last["RSI"])       else 50
-        rsi_mid   = (p["RSI_OB"] + p["RSI_OS"]) / 2
+        rsi = float(last["RSI"]) if not pd.isna(last["RSI"]) else 50
+        rsi_mid = (p["RSI_OB"] + p["RSI_OS"]) / 2
         # Celkový signál
         conds_buy = [ema_short > ema_long, rsi < rsi_mid, bb_pct < 0.4, macd > macd_sig, price > sma_short]
         buy_score = sum(conds_buy)
@@ -763,20 +760,20 @@ def export_order_levels_png(results: list):
         else:
             signal = "NEU"
         # Cenové hladiny
-        buffer = 0.005                              # 0.5% buffer nad BB lower
+        buffer = 0.005                                 # 0.5% buffer nad BB lower
         buy_limit = bb_lower * (1 + buffer)            # Buy Limit = BB lower + buffer
         stop_loss = buy_limit - p["ATR_SL_MULT"] * atr # Stop pod buy limitem
         risk_per = buy_limit - stop_loss               # Riziko na 1 kus
-        tp1 = buy_limit + risk_per                # TP1 = R:R 1:1
-        tp2 = bb_upper                            # TP2 = BB upper
+        tp1 = buy_limit + risk_per                     # TP1 = R:R 1:1
+        tp2 = bb_upper                                 # TP2 = BB upper
         # Risk v USD při kapitálu INITIAL_CAP
         qty_est    = (INITIAL_CAP * 0.95) / buy_limit if buy_limit > 0 else 0
         risk_usd   = risk_per * qty_est
         # Procentuální vzdálenosti od aktuální ceny
-        bl_pct  = (buy_limit  - price) / price * 100
-        sl_pct  = (stop_loss  - price) / price * 100
-        tp1_pct = (tp1        - price) / price * 100
-        tp2_pct = (tp2        - price) / price * 100
+        bl_pct = (buy_limit - price) / price * 100
+        sl_pct = (stop_loss - price) / price * 100
+        tp1_pct = (tp1 - price) / price * 100
+        tp2_pct = (tp2 - price) / price * 100
         rr1 = abs((tp1 - buy_limit) / risk_per) if risk_per > 0 else 0
         rr2 = abs((tp2 - buy_limit) / risk_per) if risk_per > 0 else 0
         rows.append([name,r.get("profile", "-"), f"${price:,.2f}", signal, f"${buy_limit:,.2f} ({bl_pct:+.1f}%)", f"${stop_loss:,.2f} ({sl_pct:+.1f}%)", f"${tp1:,.2f} ({tp1_pct:+.1f}%) 1:{rr1:.1f}", f"${tp2:,.2f} ({tp2_pct:+.1f}%) 1:{rr2:.1f}", f"${risk_usd:,.0f}",])
@@ -837,21 +834,20 @@ def print_current_signals(results: list):
     ts = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
     print("\n" + "=" * 72)
     print(f"  AKTUÁLNÍ SIGNÁLY A CENOVÉ HLADINY  –  {ts}")
-    print("=" * 72)
     for r in results:
         df = r["price_df"]; p = r["p"]; name = r["asset"]; last = df.iloc[-1]
-        price      = float(df["Close"].astype(float).iloc[-1])
-        atr        = float(last["ATR"]) if not pd.isna(last["ATR"]) else 0
-        rsi        = float(last["RSI"]) if not pd.isna(last["RSI"]) else 50
-        bb_pct     = float(last["BB_pct"]) if not pd.isna(last["BB_pct"]) else 0.5
-        bb_upper   = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price
-        bb_lower   = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price
-        macd       = float(last["MACD"])     if not pd.isna(last["MACD"])     else 0
-        macd_sig   = float(last["MACD_sig"]) if not pd.isna(last["MACD_sig"]) else 0
-        ema_short  = float(last["EMA_short"]) if not pd.isna(last["EMA_short"]) else price
-        ema_long   = float(last["EMA_long"])  if not pd.isna(last["EMA_long"])  else price
-        sma_short  = float(last["SMA_short"]) if not pd.isna(last["SMA_short"]) else price
-        rsi_mid    = (p["RSI_OB"] + p["RSI_OS"]) / 2
+        price = float(df["Close"].astype(float).iloc[-1])
+        atr = float(last["ATR"]) if not pd.isna(last["ATR"]) else 0
+        rsi = float(last["RSI"]) if not pd.isna(last["RSI"]) else 50
+        bb_pct = float(last["BB_pct"]) if not pd.isna(last["BB_pct"]) else 0.5
+        bb_upper = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price
+        bb_lower = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price
+        macd = float(last["MACD"]) if not pd.isna(last["MACD"]) else 0
+        macd_sig = float(last["MACD_sig"]) if not pd.isna(last["MACD_sig"]) else 0
+        ema_short = float(last["EMA_short"]) if not pd.isna(last["EMA_short"]) else price
+        ema_long = float(last["EMA_long"])  if not pd.isna(last["EMA_long"]) else price
+        sma_short = float(last["SMA_short"]) if not pd.isna(last["SMA_short"]) else price
+        rsi_mid = (p["RSI_OB"] + p["RSI_OS"]) / 2
         # Stav každého indikátoru
         conds_buy = {
             "MA Crossover": ema_short > ema_long,
@@ -860,19 +856,15 @@ def print_current_signals(results: list):
             "MACD":         macd > macd_sig,
             "ATR trend":    price > sma_short,
         }
-        buy_score  = sum(conds_buy.values())
-        sell_score = sum(not v for v in conds_buy.values())
+        buy_score  = sum(conds_buy.values()); sell_score = sum(not v for v in conds_buy.values())
         if buy_score >= 3:
-            signal_str = "✅  AKTIVNÍ BUY SIGNÁL"
-            signal_col = "BUY"
+            signal_str = "✔ AKTIVNÍ BUY SIGNÁL"; signal_col = "BUY"
         elif sell_score >= 3:
-            signal_str = "🔴  AKTIVNÍ SELL SIGNÁL"
-            signal_col = "SELL"
+            signal_str = "x AKTIVNÍ SELL SIGNÁL"; signal_col = "SELL"
         else:
-            signal_str = "⚪  NEUTRÁLNÍ"
-            signal_col = "NEU"
+            signal_str = "- NEUTRÁLNÍ"; signal_col = "NEU"
         # Cenové hladiny
-        stop_loss   = price - p["ATR_SL_MULT"] * atr
+        stop_loss = price - p["ATR_SL_MULT"] * atr
         take_profit = price + 2 * p["ATR_SL_MULT"] * atr   # R:R 1:2
         sell_target = bb_upper                               # BB horní pásmo
         buy_zone_lo = bb_lower                               # BB dolní pásmo
@@ -891,19 +883,18 @@ def print_current_signals(results: list):
         }
         for ind, is_buy in conds_buy.items():
             val, det = details[ind]
-            icon = "✅" if is_buy else "🔴"
+            icon = "✔" if is_buy else "x"
             print(f"  {ind:<16} {val:>12}   {icon}     {det}")
         print(f"  {'─'*68}")
         print(f"  BUY skóre: {buy_score}/5   SELL skóre: {sell_score}/5")
-        print(f"  {'─'*68}")
-        print(f"  📈  BUY zóna:      ${buy_zone_lo:>10.2f}  –  ${buy_zone_hi:.2f}  (BB lower – aktuální cena)")
-        print(f"  🛑  Stop-Loss:     ${stop_loss:>10.2f}           ({p['ATR_SL_MULT']}× ATR={atr:.2f} pod cenou)")
+        print(f"  BUY zóna:      ${buy_zone_lo:>10.2f}  –  ${buy_zone_hi:.2f}  (BB lower – aktuální cena)")
+        print(f"  Stop-Loss:     ${stop_loss:>10.2f}           ({p['ATR_SL_MULT']}× ATR={atr:.2f} pod cenou)")
         sl_pct = (price - stop_loss) / price * 100
         tp_pct = (take_profit - price) / price * 100
         st_pct = (sell_target - price) / price * 100
         print(f"                              ({sl_pct:.1f} % pod aktuální cenou)")
-        print(f"  🎯  Take Profit:   ${take_profit:>10.2f}           (+{tp_pct:.1f} %, R:R 1:2)")
-        print(f"  📉  SELL target:   ${sell_target:>10.2f}           (+{st_pct:.1f} %, BB upper)")
+        print(f"  Take Profit:   ${take_profit:>10.2f}           (+{tp_pct:.1f} %, R:R 1:2)")
+        print(f"  SELL target:   ${sell_target:>10.2f}           (+{st_pct:.1f} %, BB upper)")
     print()
 
 #  HLAVNÍ PROGRAMs
