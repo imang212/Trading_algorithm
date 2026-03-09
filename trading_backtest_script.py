@@ -24,13 +24,15 @@ from datetime import datetime, timedelta
 # Configuration
 ASSETS = {
     # Komodity & futures
-    "Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "USDIDX": "DX-Y.NYB", "Bitcoin": "BTC-USD",
+    "Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "USDIDX": "DX-Y.NYB", 
+    # Krypto
+    "Bitcoin": "BTC-USD",
     # ETF
     "SP500": "SXR8.DE", "MSCIWorld": "EUNL.DE", "Nasdaq100": "CNDX.L",
     # Tech akcie
-    "MSFT": "MSFT", "GOOGL": "GOOGL", "Apple": "AAPL", "Tesla": "TSLA", "Netflix": "NFLX", "ORCL": "ORCL", "NVDA": "NVDA", "AMD": "AMD", "Spotify": "SPOT",
+    "MSFT": "MSFT", "Nokia": "NOK", "Ericsson": "ERIC", "GOOGL": "GOOGL", "Apple": "AAPL", "Tesla": "TSLA", "Netflix": "NFLX", "ORCL": "ORCL", "NVDA": "NVDA", "AMD": "AMD", "Spotify": "SPOT",
     # Defenzivní akcie
-    "Coca-Cola": "KO", "CocaColaCCH": "CCH.L", "AgnicoEagle": "AEM", "NovoNordisk": "NVO", "Moneta": "MONET.PR", "KomBanka": "KOMB.PR",
+    "Coca-Cola": "KO", "CocaColaCCH": "CCH.L", "AgnicoEagle": "AEM", "NewmontMining": "NEM", "NovoNordisk": "NVO", "Moneta": "MONET.PR", "KomBanka": "KOMB.PR",
 }
 
 START_DATE = "2021-01-01"; END_DATE = datetime.today().strftime("%Y-%m-%d")
@@ -63,10 +65,10 @@ PROFILES = {
 # Přiřazení profilu každému assetu
 ASSET_PROFILES = {
     "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "USDIDX": "FOREX_IDX", "Bitcoin": "CRYPTO", "SP500": "DEFENSIVE", "MSCIWorld": "DEFENSIVE", "Nasdaq100": "DEFENSIVE", 
-    "MSFT": "TECH", "GOOGL": "TECH", "Apple": "TECH", "Tesla": "TECH", "Netflix": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", 
-    "Coca-Cola": "DEFENSIVE", "CocaColaCCH": "DEFENSIVE", "NovoNordisk": "DEFENSIVE", "AgnicoEagle": "DEFENSIVE", "Moneta": "DEFENSIVE", "KomBanka": "DEFENSIVE",
+    "MSFT": "TECH", "Nokia": "TECH", "Ericsson": "TECH", "GOOGL": "TECH", "Apple": "TECH", "Tesla": "TECH", "Netflix": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", 
+    "Coca-Cola": "DEFENSIVE", "CocaColaCCH": "DEFENSIVE", "NovoNordisk": "DEFENSIVE", "AgnicoEagle": "DEFENSIVE", "NewmontMining": "DEFENSIVE", "Moneta": "DEFENSIVE", "KomBanka": "DEFENSIVE",
 }
-
+0
 #  VÝPOČET INDIKÁTORŮ - MA Crossover, RSI, Bollinger Bands, MACD, ATR
 def compute_indicators(df: pd.DataFrame, p: dict) -> pd.DataFrame:
     c = df["Close"].astype(float)
