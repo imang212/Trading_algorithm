@@ -24,17 +24,18 @@ from datetime import datetime, timedelta
 # Configuration
 ASSETS = {
     # Komodity & futures
-    "Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "USDIDX": "DX-Y.NYB", 
+    "Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "Brent_Oil": "BZ=F", "USDIDX": "DX-Y.NYB", 
     # Krypto
     "Bitcoin": "BTC-USD",
     # ETF
     "SP500": "SXR8.DE", "MSCIWorld": "EUNL.DE", "Nasdaq100": "CNDX.L",
     # Tech akcie
-    "MSFT": "MSFT", "Nokia": "NOK", "Ericsson": "ERIC", "GOOGL": "GOOGL", "Apple": "AAPL", "Tesla": "TSLA", "Netflix": "NFLX", "ORCL": "ORCL", "NVDA": "NVDA", "AMD": "AMD", "Spotify": "SPOT",
+    "MSFT": "MSFT", "Nokia": "NOKIA.HE", "Ericsson": "ERIC", "GOOGL": "GOOGL", "Apple": "AAPL", "Tesla": "TSLA", "Netflix": "NFLX", "ORCL": "ORCL", "NVDA": "NVDA", "AMD": "AMD", "Intel": "INTC", "Spotify": "SPOT", "Coinbase": "COIN",
     # Defenzivní akcie
-    "Coca-Cola": "KO", "CocaColaCCH": "CCH.L", "AgnicoEagle": "AEM", "NewmontMining": "NEM", "NovoNordisk": "NVO", "Moneta": "MONET.PR", "KomBanka": "KOMB.PR",
+    "Coca-Cola": "KO", "CocaColaCCH": "CCH.L", "AgnicoEagle": "AEM", "NewmontMining": "NEM", "NovoNordisk": "NOVO-B.CO", "Moneta": "MONET.PR", "KomBanka": "KOMB.PR",
 }
 
+# Yearly data range for backtest
 START_DATE = "2021-01-01"; END_DATE = datetime.today().strftime("%Y-%m-%d")
 INITIAL_CAP = 10_000 # USD na každý asset
 COMMISSION = 0.001 # 0.1 % za obchod
@@ -61,14 +62,13 @@ PROFILES = {
     "TECH":      dict(MA_SHORT=20, MA_LONG=50,  RSI_PERIOD=14, RSI_OB=70, RSI_OS=30, BB_PERIOD=20, BB_STD=2.0, MACD_FAST=12, MACD_SLOW=26, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=2.0),
     "DEFENSIVE": dict(MA_SHORT=25, MA_LONG=60,  RSI_PERIOD=14, RSI_OB=65, RSI_OS=35, BB_PERIOD=20, BB_STD=1.8, MACD_FAST=12, MACD_SLOW=26, MACD_SIGNAL=9, ATR_PERIOD=14, ATR_SL_MULT=1.8),
 }
-
 # Přiřazení profilu každému assetu
 ASSET_PROFILES = {
-    "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "USDIDX": "FOREX_IDX", "Bitcoin": "CRYPTO", "SP500": "DEFENSIVE", "MSCIWorld": "DEFENSIVE", "Nasdaq100": "DEFENSIVE", 
-    "MSFT": "TECH", "Nokia": "TECH", "Ericsson": "TECH", "GOOGL": "TECH", "Apple": "TECH", "Tesla": "TECH", "Netflix": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", 
+    "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "Brent_Oil": "COMMODITY", "USDIDX": "FOREX_IDX", "Bitcoin": "CRYPTO", "SP500": "DEFENSIVE", "MSCIWorld": "DEFENSIVE", "Nasdaq100": "DEFENSIVE", 
+    "MSFT": "TECH", "Nokia": "TECH", "Ericsson": "TECH", "GOOGL": "TECH", "Apple": "TECH", "Tesla": "TECH", "Netflix": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", "Intel": "TECH", "Coinbase": "TECH",
     "Coca-Cola": "DEFENSIVE", "CocaColaCCH": "DEFENSIVE", "NovoNordisk": "DEFENSIVE", "AgnicoEagle": "DEFENSIVE", "NewmontMining": "DEFENSIVE", "Moneta": "DEFENSIVE", "KomBanka": "DEFENSIVE",
 }
-0
+
 #  VÝPOČET INDIKÁTORŮ - MA Crossover, RSI, Bollinger Bands, MACD, ATR
 def compute_indicators(df: pd.DataFrame, p: dict) -> pd.DataFrame:
     c = df["Close"].astype(float)
@@ -209,7 +209,6 @@ def run_backtest(df: pd.DataFrame, asset_name: str, p: dict) -> dict:
 # VISUALIZATION AND PREDICTION
 MC_DAYS        = 30     # horizont predikce (obchodní dny)
 MC_SIMULATIONS = 1000   # počet simulací
-
 MC_PROFILE_META = {
     "DEFENSIVE": {"color": "#1565c0", "label": "Random Walk", "short": "RW"},
     "TECH":      {"color": "#6a1b9a", "label": "RW + Earnings skoky", "short": "RW+E"},
@@ -319,16 +318,9 @@ def monte_carlo_forecast(close: pd.Series, profile: str = "TECH", n_days: int = 
         paths = _mc_random_walk(returns, last_price, n_sim, n_days, rng)
     last_date = close.index[-1]
     future_dates = pd.bdate_range(start=last_date + pd.Timedelta(days=1), periods=n_days)
-    return {
-        "dates":   future_dates,
-        "p10":     np.percentile(paths, 10,  axis=0),
-        "p25":     np.percentile(paths, 25,  axis=0),
-        "p50":     np.percentile(paths, 50,  axis=0),
-        "p75":     np.percentile(paths, 75,  axis=0),
-        "p90":     np.percentile(paths, 90,  axis=0),
-        "last":    last_price,
-        "profile": profile,
-    }
+    return {"dates": future_dates, "p10": np.percentile(paths, 10, axis=0), "p25": np.percentile(paths, 25, axis=0),
+        "p50": np.percentile(paths, 50, axis=0), "p75": np.percentile(paths, 75, axis=0), "p90": np.percentile(paths, 90, axis=0),
+        "last": last_price, "profile": profile,}
 
 def draw_monte_carlo(ax, close: pd.Series, profile: str = "TECH"):
     """Nakreslí Monte Carlo vějíř na danou osu s barvou dle profilu."""
@@ -642,6 +634,112 @@ def compute_yearly_breakdown(results: list) -> dict:
             wr_yr    = len(wins_yr) / len(sell_yr) * 100 if len(sell_yr) > 0 else float("nan")
             breakdown[name][yr] = {"return": yr_return,"win_rate": wr_yr,"sharpe": sharpe_yr,"trades": len(sell_yr),}
     return breakdown
+
+def run_hourly_signals(interval: str = "1h"):
+    """
+    Stáhne hodinová (nebo 4h) data pro všechny assety,
+    spočítá indikátory a exportuje PNG tabulku signálů.
+    Spuštění:
+        python trading_backtest.py --signals-hourly
+        python trading_backtest.py --signals-hourly --interval 4h
+    """
+    iv = INTERVAL_SETTINGS.get(interval, INTERVAL_SETTINGS["1h"])
+    ts_label = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
+    fname = f"signals_{interval}.png"
+    print(f"HODINOVÁ ANALÝZA VŠECH ASSETŮ  [{iv['label']}]")
+    print(f"{ts_label}")
+    rows = []
+    for name, ticker in ASSETS.items():
+        profile_name = ASSET_PROFILES.get(name, "TECH"); p = PROFILES[profile_name]
+        print(f"{name:<18} ({ticker})...", end="", flush=True)
+        try:
+            if interval == "4h":
+                raw = yf.download(ticker, period=iv["period"], interval="1h", progress=False, auto_adjust=True)
+                if isinstance(raw.columns, pd.MultiIndex):
+                    raw.columns = raw.columns.get_level_values(0)
+                raw = raw.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna()
+            else:
+                raw = yf.download(ticker, period=iv["period"], interval=interval, progress=False, auto_adjust=True)
+                if isinstance(raw.columns, pd.MultiIndex):
+                    raw.columns = raw.columns.get_level_values(0)
+            if raw.empty or len(raw) < max(p["MA_LONG"] + 5, 50):
+                print(f"nedostatek dat ({len(raw) if not raw.empty else 0} svíček)")
+                rows.append([name, profile_name, ticker, "N/A", "–", "–", "–", "–", "–", "–", "–", "–"])
+                continue
+            df = compute_indicators(raw.copy(), p); last = df.iloc[-1]; c = df["Close"].astype(float)
+            price = float(c.iloc[-1]); prev = float(c.iloc[-2]); change = (price - prev) / prev * 100
+            atr       = float(last["ATR"])       if not pd.isna(last["ATR"])       else 0
+            rsi       = float(last["RSI"])       if not pd.isna(last["RSI"])       else 50
+            bb_pct    = float(last["BB_pct"])    if not pd.isna(last["BB_pct"])    else 0.5
+            bb_upper  = float(last["BB_upper"])  if not pd.isna(last["BB_upper"])  else price
+            bb_lower  = float(last["BB_lower"])  if not pd.isna(last["BB_lower"])  else price
+            macd      = float(last["MACD"])      if not pd.isna(last["MACD"])      else 0
+            macd_sig  = float(last["MACD_sig"])  if not pd.isna(last["MACD_sig"])  else 0
+            macd_hist = float(last["MACD_hist"]) if not pd.isna(last["MACD_hist"]) else 0
+            ema_short = float(last["EMA_short"]) if not pd.isna(last["EMA_short"]) else price
+            ema_long  = float(last["EMA_long"])  if not pd.isna(last["EMA_long"])  else price
+            sma_short = float(last["SMA_short"]) if not pd.isna(last["SMA_short"]) else price
+            rsi_mid   = (p["RSI_OB"] + p["RSI_OS"]) / 2
+            conds_buy = {"MA": ema_short > ema_long,"RSI": rsi < rsi_mid,"BB": bb_pct < 0.4,"MACD": macd > macd_sig,"ATR": price > sma_short,}
+            buy_score  = sum(conds_buy.values()); sell_score = sum(not v for v in conds_buy.values())
+            if buy_score >= 3: signal = "BUY"
+            elif sell_score >= 3: signal = "SELL"
+            else: signal = "NEU"
+            def _ic(v): return "✔" if v else "x"
+            ind_icons = (f'{_ic(conds_buy["MA"])}  {_ic(conds_buy["RSI"])}  {_ic(conds_buy["BB"])}  {_ic(conds_buy["MACD"])}  {_ic(conds_buy["ATR"])}')
+            # Cenové hladiny
+            buffer      = 0.005
+            buy_limit   = bb_lower * (1 + buffer)
+            stop_loss   = buy_limit - p["ATR_SL_MULT"] * atr
+            risk_per    = buy_limit - stop_loss
+            tp1         = buy_limit + risk_per
+            sl_pct      = (price - stop_loss)  / price * 100 if price > 0 else 0
+            tp1_pct     = (tp1   - price)      / price * 100 if price > 0 else 0
+            bb_up_pct   = (bb_upper - price)   / price * 100 if price > 0 else 0
+            chg_str     = f"{change:+.2f}%"
+            arrow       = "▲" if change >= 0 else "▼"
+            print(f"{signal:<4}  BUY:{buy_score}/5")
+            rows.append([name,profile_name,f"${price:,.2f} {arrow}{chg_str}", signal, f"{buy_score}/5", f"{sell_score}/5", ind_icons,f"${buy_limit:,.2f}", f"${stop_loss:,.2f} (-{sl_pct:.1f}%)", f"${tp1:,.2f} (+{tp1_pct:.1f}%)", f"${bb_upper:,.2f} (+{bb_up_pct:.1f}%)", f"RSI:{rsi:.0f}  MACD:{'▲' if macd_hist>=0 else '▼'}",])
+        except Exception as e:
+            print(f" {e}")
+            rows.append([name, profile_name, ticker, "ERR", "–", "–", "–", "–", "–", "–", "–", str(e)[:30]])
+ 
+    headers = ["Asset", "Profil", f"Cena ({interval})", "Signal","BUY sc.", "SELL sc.", "MA / RSI / BB / MACD / ATR","Buy Limit", "Stop-Loss", "Take Profit 1", "SELL target (BB upper)","RSI / MACD trend"]
+    n_rows = len(rows); n_cols = len(headers)
+    signal_bg = {"BUY": "#d4edda", "SELL": "#f8d7da", "NEU": "#fff3cd", "N/A": "#eeeeee", "ERR": "#eeeeee"}
+    cell_colors = []
+    for i, row in enumerate(rows):
+        bg = "#EEF2F7" if i % 2 == 0 else "#FFFFFF"
+        row_c = []
+        for j in range(n_cols):
+            if j == 3:
+                row_c.append(signal_bg.get(row[j], bg))
+            elif j == 7:
+                row_c.append("#e8f5e9")
+            elif j == 8:
+                row_c.append("#fdecea")
+            elif j in (9, 10):
+                row_c.append("#e3f2fd")
+            else:
+                row_c.append(bg)
+        cell_colors.append(row_c)
+    fig, ax = plt.subplots(figsize=(28, 1.8 + n_rows * 0.60))
+    ax.axis("off")
+    tbl = ax.table(cellText=rows, colLabels=headers, cellColours=cell_colors, colColours=["#1E50A0"] * n_cols, cellLoc="center", loc="center",)
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(8.5)
+    tbl.scale(1, 2.0)
+    for j in range(n_cols):
+        tbl[0, j].set_text_props(color="white", fontweight="bold")
+    for i in range(1, n_rows + 1):
+        if rows[i-1][3] in ("BUY", "SELL"):
+            tbl[i, 3].set_text_props(fontweight="bold")
+    fig.suptitle(
+        f"HODINOVA ANALYZA VSECH ASSETU  |  Interval: {interval} ({iv['label']})"
+        f"  |  Vygenerovano: {ts_label}",
+        fontsize=11, fontweight="bold", y=0.99, color="#1E50A0"
+    )
+    plt.tight_layout(); plt.savefig(fname, dpi=150, bbox_inches="tight"); print(f"\n  -> PNG tabulka ulozena: {fname}"); plt.close()
 
 def export_signals_png(results: list):
     """Exportuje aktuální signály a cenové hladiny do PNG tabulky."""
@@ -973,6 +1071,182 @@ def main():
     # Souhrnný srovnávací graf
     plot_summary(results)
     print("\n  Hotovo! Grafy jsou uloženy jako PNG soubory.")
+
+INTERVAL_SETTINGS = {
+    "1m":  {"period": "5d",   "lookback": 200,  "label": "1 minuta",    "mc_days": 60},
+    "5m":  {"period": "30d",  "lookback": 200,  "label": "5 minut",     "mc_days": 120},
+    "15m": {"period": "30d",  "lookback": 200,  "label": "15 minut",    "mc_days": 96},
+    "30m": {"period": "30d",  "lookback": 200,  "label": "30 minut",    "mc_days": 48},
+    "1h":  {"period": "180d", "lookback": 200,  "label": "1 hodina",    "mc_days": 48},
+    "4h":  {"period": "180d", "lookback": 200,  "label": "4 hodiny",    "mc_days": 30},
+    "1d":  {"period": "6mo",  "lookback": 90,   "label": "1 den",       "mc_days": 30},
+}
+def analyze_asset(name: str, interval: str = "1d"):
+    """
+    Rychlá analýza jednoho assetu – stáhne aktuální data
+    a zobrazí stav všech indikátorů + doporučení do terminálu.
+    Spuštění:
+        python trading_backtest.py --analyze Gold
+        python trading_backtest.py --analyze Gold --interval 1h
+        python trading_backtest.py --analyze Gold --interval 4h
+        python trading_backtest.py --analyze Bitcoin --interval 15m
+    """
+    # Validace intervalu
+    if interval not in INTERVAL_SETTINGS:
+        print(f"\n Neznámý interval '{interval}'.")
+        print(f"   Dostupné intervaly: {', '.join(INTERVAL_SETTINGS.keys())}")
+        return
+    iv = INTERVAL_SETTINGS[interval]
+    # Najdi ticker
+    ticker = ASSETS.get(name)
+    if not ticker:
+        for k, v in ASSETS.items():
+            if k.lower() == name.lower():
+                name, ticker = k, v
+                break
+    if not ticker:
+        print(f"\n Asset '{name}' nenalezen.")
+        print(f"   Dostupné assety: {', '.join(ASSETS.keys())}")
+        return
+    profile_name = ASSET_PROFILES.get(name, "TECH"); p = PROFILES[profile_name]
+    ts = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
+    print(f"  RYCHLÁ ANALÝZA: {name} ({ticker})  [{iv['label']}]")
+    print(f"  {ts}")
+    print(f"  Stahuji data  (interval={interval}, period={iv['period']})...")
+    try:
+        # 4h = resample z 1h (Yahoo Finance 4h nepodporuje)
+        if interval == "4h":
+            raw = yf.download(ticker, period=iv["period"], interval="1h", progress=False, auto_adjust=True)
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+            raw = raw.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna()
+        else:
+            raw = yf.download(ticker, period=iv["period"], interval=interval, progress=False, auto_adjust=True)
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+        if raw.empty:
+            print(f"  Nepodařilo se stáhnout data pro {name}.")
+            return
+        min_bars = max(p["MA_LONG"] + 5, 50)
+        if len(raw) < min_bars:
+            print(f"  Nedostatek dat ({len(raw)} svíček, potřeba {min_bars}).")
+            print(f"  Zkus delší period nebo jiný interval.")
+            return
+    except Exception as e:
+        print(f"  Chyba při stahování: {e}")
+        return
+    df = compute_indicators(raw.copy(), p); last = df.iloc[-1]; c = df["Close"].astype(float)
+    price  = float(c.iloc[-1])
+    prev_close = float(c.iloc[-2])
+    change = (price - prev_close) / prev_close * 100
+    atr       = float(last["ATR"])      if not pd.isna(last["ATR"])      else 0
+    rsi       = float(last["RSI"])      if not pd.isna(last["RSI"])      else 50
+    bb_pct    = float(last["BB_pct"])   if not pd.isna(last["BB_pct"])   else 0.5
+    bb_upper  = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price
+    bb_lower  = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price
+    macd      = float(last["MACD"])     if not pd.isna(last["MACD"])     else 0
+    macd_sig  = float(last["MACD_sig"]) if not pd.isna(last["MACD_sig"]) else 0
+    macd_hist = float(last["MACD_hist"])if not pd.isna(last["MACD_hist"])else 0
+    ema_short = float(last["EMA_short"])if not pd.isna(last["EMA_short"])else price
+    ema_long  = float(last["EMA_long"]) if not pd.isna(last["EMA_long"]) else price
+    sma_short = float(last["SMA_short"])if not pd.isna(last["SMA_short"])else price
+    rsi_mid   = (p["RSI_OB"] + p["RSI_OS"]) / 2
+    # Stav indikátorů
+    conds = {"MA Crossover": ema_short > ema_long,"RSI": rsi < rsi_mid,"Bollinger": bb_pct < 0.4,"MACD": macd > macd_sig,"ATR trend": price > sma_short,}
+    buy_score = sum(conds.values()); sell_score = sum(not v for v in conds.values())
+    # Celkové doporučení
+    if buy_score >= 4:
+        rec = "✔ SILNÝ BUY SIGNÁL"
+    elif buy_score == 3:
+        rec = "✔ BUY SIGNÁL"
+    elif sell_score >= 4:
+        rec = "x SILNÝ SELL SIGNÁL"
+    elif sell_score == 3:
+        rec = "x SELL SIGNÁL"
+    else:
+        rec = "o NEUTRÁLNÍ – POČKEJ"
+    # Trend síla MACD histogramu
+    hist_trend = "sílí ▲" if macd_hist > 0 else "slábne ▼"
+    arrow = "▲" if change >= 0 else "▼"
+    candle_label = iv["label"]
+    print(f"Aktuální cena:  ${price:>12,.2f}  {arrow} {change:+.2f}% (předchozí svíčka)")
+    print(f"Interval:       {candle_label}  (period: {iv['period']}, svíček: {len(df)})")
+    print(f"Profil:         {profile_name}")
+    print(f"ATR (volatilita): {atr:.2f}  ({atr/price*100:.1f}% na svíčku)")
+    print()
+    # Tabulka indikátorů
+    details = {
+        "MA Crossover": (f"EMA{p['MA_SHORT']}={'>' if ema_short>ema_long else '<'}EMA{p['MA_LONG']}", f"EMA{p['MA_SHORT']}={ema_short:.2f}  EMA{p['MA_LONG']}={ema_long:.2f}"),
+        "RSI": (f"{rsi:.1f}", f"{'Pod' if rsi < rsi_mid else 'Nad'} středem {rsi_mid:.0f}  |  OB={p['RSI_OB']} OS={p['RSI_OS']}"),
+        "Bollinger": (f"BB%={bb_pct:.2f}", f"Low={bb_lower:.2f}  Mid={float(last['BB_mid']):.2f}  Up={bb_upper:.2f}"),
+        "MACD": (f"{'▲' if macd>macd_sig else '▼'} hist={macd_hist:.3f}", f"MACD={macd:.3f}  Signal={macd_sig:.3f}  ({hist_trend})"),
+        "ATR trend": (f"{'cena>SMA' if price>sma_short else 'cena<SMA'}", f"Cena={price:.2f}  SMA{p['MA_SHORT']}={sma_short:.2f}"),
+    }
+    print(f"{'Indikátor':<16} {'Hodnota':>14}   {'BUY?':^5}   Detail")
+    print(f"{'─'*16} {'─'*14}   {'─'*5}   {'─'*36}")
+    for ind, is_buy in conds.items():
+        val, det = details[ind]
+        icon = "✔" if is_buy else "x"
+        print(f"{ind:<16} {val:>14}   {icon}     {det}")
+    print(f"BUY skóre: {buy_score}/5   SELL skóre: {sell_score}/5")
+    print(f"  👉  {rec}")
+    # Cenové hladiny
+    buffer = 0.005
+    buy_limit = bb_lower * (1 + buffer)
+    stop_loss = buy_limit - p["ATR_SL_MULT"] * atr
+    risk_per = buy_limit - stop_loss
+    tp1 = buy_limit + risk_per
+    tp2 = bb_upper
+    risk_usd = risk_per * (INITIAL_CAP * 0.95 / buy_limit) if buy_limit > 0 else 0
+    sl_pct = (price - stop_loss) / price * 100
+    tp1_pct = (tp1 - price) / price * 100
+    tp2_pct = (tp2 - price) / price * 100
+    bl_pct_diff = (buy_limit - price)  / price * 100
+    print(f"\nCENOVÉ HLADINY:")
+    print(f"Buy Limit:   ${buy_limit:>10,.2f}  ({bl_pct_diff:+.1f}% od aktuální ceny)")
+    print(f"Stop-Loss:   ${stop_loss:>10,.2f}  (-{sl_pct:.1f}%,  {p['ATR_SL_MULT']}× ATR)")
+    print(f"Take Profit: ${tp1:>10,.2f}  (+{tp1_pct:.1f}%,  R:R 1:1)")
+    print(f"SELL target: ${tp2:>10,.2f}  (+{tp2_pct:.1f}%,  BB upper)")
+    print(f"Risk/obchod: ${risk_usd:>9,.0f}  (při kapitálu ${INITIAL_CAP:,})")
+    # Kontext – kde jsme v BB pásmu
+    print(f"\n  KONTEXT:")
+    if bb_pct < 0.2: bb_comment = "Velmi blízko dolního pásma – historicky dobrá nákupní zóna"
+    elif bb_pct < 0.4: bb_comment = "Blízko dolního pásma – mírně podhodnoceno"
+    elif bb_pct < 0.6: bb_comment = "Uprostřed pásma – neutrální pozice"
+    elif bb_pct < 0.8: bb_comment = "Blízko horního pásma – mírně předraženo"
+    else: bb_comment = "Velmi blízko horního pásma – historicky prodejní zóna"
     
+    if rsi < p["RSI_OS"]: rsi_comment = f"RSI přeprodán ({rsi:.0f}) – silný odraz možný"
+    elif rsi > p["RSI_OB"]: rsi_comment = f"RSI překoupen ({rsi:.0f}) – obrat možný"
+    elif rsi < rsi_mid: rsi_comment = f"RSI ({rsi:.0f}) pod středem – prostor k růstu"
+    else: rsi_comment = f"RSI ({rsi:.0f}) nad středem – momentum slábne"
+    print(f"Bollinger: {bb_comment}")
+    print(f"RSI:       {rsi_comment}")
+    print(f"MACD:      Histogram {hist_trend} – trend {'sílí, drž pozici' if macd_hist > 0 else 'slábne, buď opatrný'}")
+    print()
+
 if __name__ == "__main__":
-    main()
+    import sys
+    args = sys.argv[1:]
+    def _get_interval(args, default="1h"):
+        if "--interval" in args:
+            idx = args.index("--interval")
+            if idx + 1 < len(args):
+                return args[idx + 1]
+        return default
+    if args and args[0] == "--analyze":
+        if len(args) < 2:
+            print("\n Použití: python trading_backtest.py --analyze <Asset> [--interval <interval>]")
+            print("   Příklad:  python trading_backtest.py --analyze Gold --interval 1h")
+            print(f"   Intervaly: {', '.join(INTERVAL_SETTINGS.keys())}")
+        else:
+            analyze_asset(args[1], interval=_get_interval(args, default="1d"))
+
+    elif args and args[0] == "--signals-hourly":
+        interval = _get_interval(args, default="1h")
+        run_hourly_signals(interval=interval)
+
+    else:
+        main()
+
+
