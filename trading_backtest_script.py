@@ -26,19 +26,19 @@ import yfinance as yf
 from datetime import datetime, timedelta
 
 # Configuration
+OUTPUT_DIR = "backtest_results"
 ASSETS = {
     # Commodities & futures
-    "Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "Brent_Oil": "BZ=F", "USDIDX": "DX-Y.NYB", 
+    "Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "Brent_Oil": "BZ=F", "USD": "DX-Y.NYB", 
     # Crypto
     "Bitcoin": "BTC-USD",
     # ETF
     "SP500": "SXR8.DE", "MSCIWorld": "EUNL.DE", "Nasdaq100": "CNDX.L",
     # Tech stocks
-    "MSFT": "MSFT", "Nokia": "NOKIA.HE", "Ericsson": "ERIC", "GOOGL": "GOOGL", "Apple": "AAPL", "Tesla": "TSLA", "Netflix": "NFLX", "Netflix_DE": "NFC.DE", "Colt": "CZG.PR", "ORCL": "ORCL", "NVDA": "NVDA", "AMD": "AMD", "Intel": "INTC", "Spotify": "SPOT", "Coinbase": "COIN",
+    "MSFT": "MSFT", "Nokia": "NOKIA.HE", "Ericsson": "ERIC", "GOOGL": "GOOGL", "Apple": "AAPL", "Tesla": "TSLA", "Netflix": "NFLX", "Netflix_DE": "NFC.DE", "Colt": "CZG.PR", "CEZ": "CEZ.PR", "ORCL": "ORCL", "NVDA": "NVDA", "AMD": "AMD", "Adobe": "ADBE", "Intel": "INTC", "Spotify": "SPOT", "Coinbase": "COIN",
     # Defensive stocks
     "Coca-Cola": "KO", "CocaColaCCH": "CCH.L", "Altria": "MO", "AgnicoEagle": "AEM", "NewmontMining": "NEM", "NovoNordisk": "NOVO-B.CO", "Moneta": "MONET.PR", "KomBanka": "KOMB.PR",
 }
-
 # Yearly data range for backtest
 START_DATE = "2021-01-01"; END_DATE = datetime.today().strftime("%Y-%m-%d")
 INITIAL_CAP = 10_000  # USD per asset
@@ -68,8 +68,8 @@ PROFILES = {
 }
 # Profile assignment for each asset
 ASSET_PROFILES = {
-    "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "Brent_Oil": "COMMODITY", "USDIDX": "FOREX_IDX", "Bitcoin": "CRYPTO", "SP500": "DEFENSIVE", "MSCIWorld": "DEFENSIVE", "Nasdaq100": "DEFENSIVE", 
-    "MSFT": "TECH", "Nokia": "TECH", "Ericsson": "TECH", "GOOGL": "TECH", "Apple": "TECH", "Tesla": "TECH", "Netflix": "TECH", "Netflix_DE": "TECH", "Colt": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", "Intel": "TECH", "Coinbase": "TECH",
+    "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "Brent_Oil": "COMMODITY", "USD": "FOREX_IDX", "Bitcoin": "CRYPTO", "SP500": "DEFENSIVE", "MSCIWorld": "DEFENSIVE", "Nasdaq100": "DEFENSIVE", 
+    "MSFT": "TECH", "Nokia": "TECH", "Ericsson": "TECH", "GOOGL": "TECH", "Apple": "TECH", "Tesla": "TECH", "Netflix": "TECH", "Netflix_DE": "TECH", "Colt": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", "Adobe": "TECH", "Intel": "TECH", "Coinbase": "TECH",
     "Coca-Cola": "DEFENSIVE", "CocaColaCCH": "DEFENSIVE", "Altria": "DEFENSIVE", "AgnicoEagle": "DEFENSIVE", "NewmontMining": "DEFENSIVE", "NovoNordisk": "DEFENSIVE", "Moneta": "DEFENSIVE", "KomBanka": "DEFENSIVE",
 }
 
@@ -166,12 +166,18 @@ def run_backtest(df: pd.DataFrame, asset_name: str, p: dict) -> dict:
     position = 0.0  # number of contracts/units
     entry_px = 0.0; stop_loss = 0.0
     trades = []; equity = []; prev_sig = 0
+    _last_valid_price = float(close.dropna().iloc[0]) if len(close.dropna()) > 0 else 0.0
     for i in range(len(df)):
         row = df.iloc[i]
         price = float(close.iloc[i])
-        sig = int(row["signal"])
+        # skip NaN rollover gaps in futures or missing data – keep equity flat, no trades
+        if pd.isna(price) or price <= 0:
+            equity.append({"date": df.index[i], "equity": capital + position * _last_valid_price})
+            continue
+        _last_valid_price = price
+        sig = int(row["signal"]) if not pd.isna(row["signal"]) else 0
         atr = float(row["ATR"]) if not np.isnan(row["ATR"]) else 0
-        # Stop-loss check
+         # Stop-loss check
         if position > 0 and price < stop_loss:
             proceeds = position * price * (1 - COMMISSION - SLIPPAGE)
             pnl = proceeds - position * entry_px
@@ -202,7 +208,7 @@ def run_backtest(df: pd.DataFrame, asset_name: str, p: dict) -> dict:
         prev_sig = sig
     # Close open position at the end 
     if position > 0:
-        last_px = float(close.iloc[-1])
+        last_px = float(close.dropna().iloc[-1]) if len(close.dropna()) > 0 else _last_valid_price
         proceeds = position * last_px * (1 - COMMISSION)
         pnl = proceeds - position * entry_px
         capital += proceeds
@@ -215,7 +221,10 @@ def run_backtest(df: pd.DataFrame, asset_name: str, p: dict) -> dict:
     final_val = capital
     total_return = (final_val - INITIAL_CAP) / INITIAL_CAP * 100
     # Buy & Hold benchmark
-    bh_return = (float(close.iloc[-1]) - float(close.iloc[0])) / float(close.iloc[0]) * 100
+    close_valid = close.dropna()
+    first_close = float(close_valid.iloc[0])  if len(close_valid) > 0 else float("nan")
+    last_close  = float(close_valid.iloc[-1]) if len(close_valid) > 0 else float("nan")
+    bh_return   = ((last_close - first_close) / first_close * 100 if first_close and first_close > 0 else float("nan"))
     sell_trades = trades_df[trades_df["type"].isin(["SELL", "STOP-LOSS", "CLOSE"])]
     wins = sell_trades[sell_trades["pnl"] > 0]
     losses = sell_trades[sell_trades["pnl"] <= 0]
@@ -781,7 +790,11 @@ def export_signals_png(results: list):
     fname    = f"signals.png"
     rows = []
     for r in results:
-        df = r["price_df"]; p = r["p"]; name = r["asset"]
+        df = r["price_df"].copy()
+        df = df[df["Close"].notna() & (df["Close"] > 0)]
+        if df.empty:
+            continue
+        p = r["p"]; name = r["asset"]
         last = df.iloc[-1]
         price = float(df["Close"].astype(float).iloc[-1])
         atr = float(last["ATR"]) if not pd.isna(last["ATR"]) else 0
@@ -871,7 +884,12 @@ def export_order_levels_png(results: list):
     fname = f"order_levels.png"
     rows = []
     for r in results:
-        df = r["price_df"]; p = r["p"]; name = r["asset"]; last = df.iloc[-1]
+        df = r["price_df"].copy()
+        # Drop NaN close rows so .iloc[-1] always gives a valid bar
+        df = df[df["Close"].notna() & (df["Close"] > 0)]
+        if df.empty:
+            continue
+        p = r["p"]; name = r["asset"]; last = df.iloc[-1]
         price = float(df["Close"].astype(float).iloc[-1])
         atr = float(last["ATR"]) if not pd.isna(last["ATR"]) else 0
         bb_upper = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price * 1.05
@@ -969,7 +987,12 @@ def print_current_signals(results: list):
     print("\n" + "=" * 72)
     print(f"CURRENT SIGNALS AND PRICE LEVELS  –  {ts}")
     for r in results:
-        df = r["price_df"]; p = r["p"]; name = r["asset"]; last = df.iloc[-1]
+        df = r["price_df"].copy()
+        # Drop NaN close rows so .iloc[-1] always gives a valid bar
+        df = df[df["Close"].notna() & (df["Close"] > 0)]
+        if df.empty:
+            continue
+        p = r["p"]; name = r["asset"]; last = df.iloc[-1]
         price = float(df["Close"].astype(float).iloc[-1])
         atr = float(last["ATR"]) if not pd.isna(last["ATR"]) else 0
         rsi = float(last["RSI"]) if not pd.isna(last["RSI"]) else 50
@@ -1071,6 +1094,8 @@ def main():
     if not results:
         print("\n Failed to download any data.")
         return
+    # sort results by total return
+    results = sorted(results, key=lambda r: r["total_return"]  if r["total_return"] == r["total_return"] else float("-inf"), reverse=True)    
     # Summary table and graphs
     print("\n" + "=" * 62)
     print("  SUMMARY RESULTS")
