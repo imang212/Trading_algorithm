@@ -36,16 +36,12 @@ The strategy is built on 5 pillars:
 * **BUY Signal:** Requires a score of ≥ 3/5 (e.g., Rising EMA + RSI < 50 + Bullish MACD).
 * **Risk Management:** Automatic Stop-Loss calculated as `2.0 * ATR`.
 
-<img width="3585" height="3347" alt="signals" src="https://github.com/user-attachments/assets/4c3c616c-da1e-482e-83b0-2b40adfa55a4" />
-
 ## 5. Backtesting & Performance Metrics
 The system provides professional metrics for objective evaluation:
 * **Alpha:** Excess return over the "Buy & Hold" benchmark.
 * **Sharpe Ratio:** Risk-adjusted return.
 * **Max Drawdown:** Peak-to-trough capital decline.
 * **Profit Factor:** Ratio of gross profits to gross losses.
-
-<img width="3885" height="4603" alt="order_levels" src="https://github.com/user-attachments/assets/12636854-f916-4111-b4b1-e10505168aa5" />
 
 <img width="2384" height="1477" alt="summary_comparison" src="https://github.com/user-attachments/assets/2b867069-9616-4cdb-a66e-6f68d010fa3e" />
 
