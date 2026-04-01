@@ -51,6 +51,8 @@ This section supplements core signals with market conviction data:
 * **OBV Divergence:** Key institutional accumulation/distribution indicator.
 * **Candle Body Ratio:** Strength of current price action.
 
+<img width="548" height="406" alt="Snímek obrazovky z 2026-04-01 19-24-11" src="https://github.com/user-attachments/assets/ca8174c4-fbfc-4610-8c42-c67b9ea89148" />
+
 ## 7. Forecasting Models
 Two advanced forecasting methods are integrated:
 1.  **Monte Carlo (1000+ Simulations):** Probability fans (Random Walk, GARCH for Crypto, Mean Reversion for Commodities).
@@ -68,12 +70,15 @@ Two advanced forecasting methods are integrated:
 ## 9. Streamlit Dashboard
 The interactive web UI features:
 * **Signal Overview:** Real-time buy zones and target levels.
+<img width="1850" height="957" alt="Snímek obrazovky z 2026-04-01 19-08-54" src="https://github.com/user-attachments/assets/3ef8964f-a8b4-454e-93c0-985a54c27557" />
+<p></p>
+
 * **Asset Detail:** Interactive Plotly charts & Volume profiles.
+<img width="1850" height="957" alt="Snímek obrazovky z 2026-04-01 19-06-14" src="https://github.com/user-attachments/assets/50ac244a-0793-4e81-b0c1-9d849bacfeb9" />
+<p></p>
+
 * **Backtest Summary:** Equity curve visualizations and multi-asset comparisons.
 
-<img width="1850" height="957" alt="Snímek obrazovky z 2026-04-01 19-08-54" src="https://github.com/user-attachments/assets/3ef8964f-a8b4-454e-93c0-985a54c27557" />
-
-<img width="1850" height="957" alt="Snímek obrazovky z 2026-04-01 19-06-14" src="https://github.com/user-attachments/assets/50ac244a-0793-4e81-b0c1-9d849bacfeb9" />
 
 ## 10. Disclaimer
 This software is for educational purposes only. Trading financial markets involves significant risk. Past performance does not guarantee future results.
