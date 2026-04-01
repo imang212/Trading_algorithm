@@ -3,7 +3,7 @@ MULTI-ASSET TRADING ALGORITHM BACKTEST
 Indicators: MA Crossover, RSI, Bollinger Bands, MACD, ATR
 Assets: Gold, Silver, MSFT, GOOGL, MONET.PR, ORCL, NVDA, AMD, SPOT, ...
 Installation of dependencies:
-    pip install yfinance pandas numpy matplotlib seaborn tabulate
+    pip install yfinance pandas numpy matplotlib seaborn tabulate prophet
 Usage:
     python trading_backtest_oop.py                              # full backtest
     python trading_backtest_oop.py --analyze Gold               # quick analysis
@@ -23,10 +23,10 @@ import matplotlib.dates as mdates
 from matplotlib.patches import Patch
 from tabulate import tabulate
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime
+import os
 
 # Configuration
-OUTPUT_DIR = "backtest_results"
 ASSETS = {
     # Commodities & futures
     "Gold": "GC=F", "Silver": "SI=F", "Oil": "CL=F", "Brent_Oil": "BZ=F", "USD": "DX-Y.NYB", 
@@ -37,10 +37,12 @@ ASSETS = {
     # Tech stocks
     "MSFT": "MSFT", "Nokia": "NOKIA.HE", "Ericsson": "ERIC", "GOOGL": "GOOGL", "Apple": "AAPL", "Tesla": "TSLA", "Netflix": "NFLX", "Netflix_DE": "NFC.DE", "Colt": "CZG.PR", "CEZ": "CEZ.PR", "ORCL": "ORCL", "NVDA": "NVDA", "AMD": "AMD", "Adobe": "ADBE", "Intel": "INTC", "Spotify": "SPOT", "Coinbase": "COIN",
     # Defensive stocks
-    "Coca-Cola": "KO", "CocaColaCCH": "CCH.L", "Altria": "MO", "AgnicoEagle": "AEM", "NewmontMining": "NEM", "NovoNordisk": "NOVO-B.CO", "Moneta": "MONET.PR", "KomBanka": "KOMB.PR",
+    "Coca-Cola": "KO", "CocaColaCCH": "CCH.L", "Altria": "MO", "Nestle": "NESN.SW", "AgnicoEagle": "AEM", "NewmontMining": "NEM", "NovoNordisk": "NOVO-B.CO", "Moneta": "MONET.PR", "KomBanka": "KOMB.PR", "UBS": "UBSG.SW", "Zurrich_Insurance": "ZURN.SW", "Nordea_Bank": "NDA-FI.HE", 
+    "British_American_Tobacco": "BTI", "Equinor": "EQNR", "Equinor_NO": "EQNR.NO", "Allianz": "ALV.DE",
 }
 # Yearly data range for backtest
 START_DATE = "2021-01-01"; END_DATE = datetime.today().strftime("%Y-%m-%d")
+OUTPUT_DIR = "backtest_results"
 INITIAL_CAP = 10_000  # USD per asset
 COMMISSION = 0.001 # 0.1% per trade
 SLIPPAGE = 0.0005 # 0.05%
@@ -70,7 +72,8 @@ PROFILES = {
 ASSET_PROFILES = {
     "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "Brent_Oil": "COMMODITY", "USD": "FOREX_IDX", "Bitcoin": "CRYPTO", "SP500": "DEFENSIVE", "MSCIWorld": "DEFENSIVE", "Nasdaq100": "DEFENSIVE", 
     "MSFT": "TECH", "Nokia": "TECH", "Ericsson": "TECH", "GOOGL": "TECH", "Apple": "TECH", "Tesla": "TECH", "Netflix": "TECH", "Netflix_DE": "TECH", "Colt": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", "Adobe": "TECH", "Intel": "TECH", "Coinbase": "TECH",
-    "Coca-Cola": "DEFENSIVE", "CocaColaCCH": "DEFENSIVE", "Altria": "DEFENSIVE", "AgnicoEagle": "DEFENSIVE", "NewmontMining": "DEFENSIVE", "NovoNordisk": "DEFENSIVE", "Moneta": "DEFENSIVE", "KomBanka": "DEFENSIVE",
+    "Coca-Cola": "DEFENSIVE", "CocaColaCCH": "DEFENSIVE", "Altria": "DEFENSIVE", "Nestle": "DEFENSIVE", "AgnicoEagle": "DEFENSIVE", "NewmontMining": "DEFENSIVE", "NovoNordisk": "DEFENSIVE", "Moneta": "DEFENSIVE", "KomBanka": "DEFENSIVE", "UBS":"DEFENSIVE", "Zurrich_Insurrance": "DEFENSIVE", "Nordea_Bank": "DEFENSIVE",
+    "British_American_Tobacco": "DEFENSIVE", "Equinor": "DEFENSIVE", "Equinor_NO": "DEFENSIVE", "Allianz": "DEFENSIVE",
 }
 
 INTERVAL_SETTINGS = {
@@ -248,7 +251,7 @@ MC_SIMULATIONS = 1000   # number of simulations
 MC_PROFILE_META = {
     "DEFENSIVE": {"color": "#1565c0", "label": "Random Walk", "short": "RW"},
     "TECH":      {"color": "#6a1b9a", "label": "RW + Earnings jumps", "short": "RW+E"},
-    "COMMODITY": {"color": "#e65100", "label": "GBM + Mean Reversion", "short": "GBM-MR"},
+    "COMMODITY": {"color": "#1b00e6", "label": "GBM + Mean Reversion", "short": "GBM-MR"},
     "CRYPTO":    {"color": "#b71c1c", "label": "GARCH volatility", "short": "GARCH"},
     "FOREX_IDX": {"color": "#1b5e20", "label": "Ornstein-Uhlenbeck", "short": "O-U"},
 }
@@ -377,6 +380,310 @@ def draw_monte_carlo(ax, close: pd.Series, profile: str = "TECH"):
     ax.axvline(close.index[-1], color=color, lw=1.0, ls=":", alpha=0.7)
     ax.annotate(f"${mc['p50'][-1]:,.0f}", xy=(d[-1], mc["p50"][-1]), fontsize=7.5, color=color, va="center")
 
+def prophet_forecast(close: pd.Series, n_days: int = 30) -> dict | None:
+    """
+    Fit a Facebook Prophet model on *close* and return a 30-day forecast. 
+    Prophet decomposes the series into:
+      trend      – detected changepoints in the long-term direction
+      seasonality – weekly + yearly patterns fitted by Fourier series
+      residual   – unexplained noise
+    Returns dict with keys: dates, yhat, yhat_lower, yhat_upper, trend,
+    components (weekly/yearly if available), last, model_info.
+    Returns None if Prophet is not installed or fitting fails.
+    """
+    try:
+        from prophet import Prophet
+        import logging
+        logging.getLogger("cmdstanpy").setLevel(logging.WARNING)
+    except ImportError:
+        return None
+    try:
+        # Prophet requires a DataFrame with columns ds (date) and y (value)
+        df_p = pd.DataFrame({"ds": close.index.tz_localize(None) if close.index.tzinfo else close.index, "y":  close.values.astype(float),}).dropna()
+        if len(df_p) < 30: return None 
+        # Detect interval – intraday data gets no yearly seasonality
+        freq_delta = df_p["ds"].diff().median()
+        is_intraday = freq_delta < pd.Timedelta("1D")
+        model = Prophet(
+            daily_seasonality=False,
+            weekly_seasonality=not is_intraday,
+            yearly_seasonality=not is_intraday,
+            changepoint_prior_scale=0.05,   # flexibility of trend changes
+            seasonality_prior_scale=10.0,
+            interval_width=0.80,            # 80% confidence interval
+            uncertainty_samples=500,
+        )
+        # Add custom intraday seasonality for hourly data
+        if is_intraday and freq_delta <= pd.Timedelta("1H"):
+            model.add_seasonality(name="daily", period=1, fourier_order=8)
+        model.fit(df_p)
+        # Build future dates – business days for daily, freq-based for intraday
+        if is_intraday:
+            last_ts = df_p["ds"].iloc[-1]
+            future_dates = [last_ts + freq_delta * i for i in range(1, n_days + 1)]
+            future = pd.DataFrame({"ds": future_dates})
+        else:
+            future = model.make_future_dataframe(periods=n_days, freq="B")
+        forecast = model.predict(future)
+        fcast_future = forecast[forecast["ds"] > df_p["ds"].iloc[-1]].copy()
+        # last_close, preserving the shape and direction of the curve.
+        last_close  = float(close.iloc[-1])
+        prophet_t0  = float(fcast_future["yhat"].iloc[0])
+        anchor_shift = last_close - prophet_t0   # additive offset
+        fcast_future = fcast_future.copy()
+        fcast_future["yhat"] += anchor_shift
+        fcast_future["yhat_lower"] += anchor_shift
+        fcast_future["yhat_upper"] += anchor_shift
+        fcast_future["trend"] += anchor_shift
+        # Extract trend direction from anchored values
+        trend_start = float(fcast_future["yhat"].iloc[0])
+        trend_end   = float(fcast_future["yhat"].iloc[-1])
+        trend_pct   = (trend_end - trend_start) / trend_start * 100 if trend_start > 0 else 0
+        if trend_pct >  3: trend_label = f"▲ UPTREND  +{trend_pct:.1f}%"
+        elif trend_pct < -3: trend_label = f"▼ DOWNTREND  {trend_pct:.1f}%"
+        else: trend_label = f"→ SIDEWAYS  {trend_pct:+.1f}%"
+        return {
+            "dates": fcast_future["ds"].values,
+            "yhat": fcast_future["yhat"].values,
+            "yhat_lower": fcast_future["yhat_lower"].values,
+            "yhat_upper": fcast_future["yhat_upper"].values,
+            "trend": fcast_future["trend"].values,
+            "trend_label": trend_label,
+            "trend_pct": trend_pct,
+            "last": last_close,
+            "n_days": n_days,
+            "model_info": f"Prophet  |  changepoints={model.n_changepoints}  |  {'intraday' if is_intraday else 'daily'}",
+        }
+    except Exception as e:
+        return None
+
+def draw_prophet(ax, close: pd.Series, n_days: int = 30, color: str = "#e67e22"):
+    """
+    Fit Prophet and draw its forecast onto *ax* alongside Monte Carlo.
+    Draws:
+      - Orange shaded 80% confidence interval
+      - Solid median (yhat) line
+      - Dashed trend component line
+      - Annotation with trend label and final price
+    If Prophet is not installed or fitting fails, draws nothing silently.
+    """
+    pf = prophet_forecast(close, n_days=n_days)
+    if pf is None: return
+    d = pf["dates"]
+    ax.fill_between(d, pf["yhat_lower"], pf["yhat_upper"], alpha=0.15, color=color, label="Prophet 80% CI")
+    ax.plot(d, pf["yhat"], color=color, lw=2.0, ls="-", label=f"Prophet forecast ({pf['trend_label']})", zorder=5)
+    ax.plot(d, pf["trend"], color=color, lw=1.2, ls="--", alpha=0.6, label="Prophet trend", zorder=4)
+    ax.axvline(close.index[-1], color=color, lw=1.0, ls=":", alpha=0.5)
+    ax.annotate(f"${pf['yhat'][-1]:,.0f}", xy=(d[-1], pf["yhat"][-1]), fontsize=7.5, color=color, va="center",)
+
+def volume_profile(df: pd.DataFrame, bins: int = 40) -> dict:
+    """
+    Compute Volume Profile – distribution of traded volume across price levels.d
+    Divides the price range into *bins* equal-width buckets and accumulates
+    the volume of every bar whose Close falls in that bucket.
+    Returns
+    -------
+    dict with keys:
+        bin_prices  – centre price of each bucket
+        bin_vols    – total volume per bucket
+        poc_price   – Point of Control (price with highest volume)
+        poc_bin     – index of POC bucket
+        va_low      – Value Area lower bound (70 % of volume)
+        va_high     – Value Area upper bound
+        hvn_prices  – High Volume Node prices (top 20 % buckets)
+        lvn_prices  – Low Volume Node prices (bottom 20 % buckets)
+        total_vol   – total volume in the period
+    """
+    close = df["Close"].astype(float)
+    vol = df["Volume"].astype(float) if "Volume" in df.columns else pd.Series(np.ones(len(df)))
+    price_min, price_max = float(close.min()), float(close.max())
+    if price_max <= price_min:
+        return None
+    bin_size = (price_max - price_min) / bins
+    bin_vols = np.zeros(bins)
+    bin_prices = np.array([price_min + (i + 0.5) * bin_size for i in range(bins)])
+    for pr, vl in zip(close.values, vol.values):
+        if pd.isna(pr) or pd.isna(vl) or vl <= 0:
+            continue
+        idx = min(int((pr - price_min) / bin_size), bins - 1)
+        bin_vols[idx] += vl
+    poc_bin = int(np.argmax(bin_vols))
+    poc_price = float(bin_prices[poc_bin])
+    # Value Area – bins containing 70 % of total volume (sorted by volume desc)
+    total_vol = float(bin_vols.sum())
+    sorted_idx = np.argsort(bin_vols)[::-1]
+    cum = 0.0
+    va_bins = set()
+    for idx in sorted_idx:
+        cum += bin_vols[idx]
+        va_bins.add(idx)
+        if cum / total_vol >= 0.70:
+            break
+    va_low  = float(bin_prices[min(va_bins)])
+    va_high = float(bin_prices[max(va_bins)])
+    # HVN / LVN – top/bottom 20 % of bins by volume
+    vol_thresh_high = np.percentile(bin_vols[bin_vols > 0], 80)
+    vol_thresh_low  = np.percentile(bin_vols[bin_vols > 0], 20)
+    hvn_prices = [float(bin_prices[i]) for i in range(bins) if bin_vols[i] >= vol_thresh_high]
+    lvn_prices = [float(bin_prices[i]) for i in range(bins) if 0 < bin_vols[i] <= vol_thresh_low]
+    return {
+        "bin_prices": bin_prices.tolist(),
+        "bin_vols": bin_vols.tolist(),
+        "poc_price": poc_price,
+        "poc_bin": poc_bin,
+        "va_low": va_low,
+        "va_high": va_high,
+        "hvn_prices": hvn_prices,
+        "lvn_prices": lvn_prices,
+        "total_vol": total_vol,
+        "bin_size": bin_size,
+    }
+ 
+def analyze_volume_momentum(df: pd.DataFrame, forward: int = 1) -> dict:
+    """
+    Analyse the relationship between current candle volume and the next
+    *forward* candle(s) return.
+    Splits volume into quartiles and computes per-quartile:
+      - average next-candle return
+      - hit rate  (% of candles where next close > current close)
+      - median next-candle return
+    Also analyses breakout quality: for every bar where price crossed above
+    BB_upper or MA crossover fired, compare volume of successful vs failed moves.
+    Returns
+    dict with keys:
+        quartile_labels   – ["Q1 (lowest)", "Q2", "Q3", "Q4 (highest)"]
+        quartile_avg_ret  – avg next-candle return per quartile
+        quartile_hit_rate – hit rate per quartile
+        quartile_med_ret  – median next-candle return per quartile
+        quartile_bounds   – (q25, q50, q75) volume thresholds
+        vol_avg           – 20-bar rolling average volume (last bar)
+        breakout_success_vol_ratio – avg vol/vol_avg for successful BUY signals
+        breakout_fail_vol_ratio    – avg vol/vol_avg for failed BUY signals
+        n_success, n_fail          – counts
+        correlation       – Pearson correlation between volume and next return
+        signal_vol_summary – text summary of key finding
+    """
+    close = df["Close"].astype(float)
+    vol = df["Volume"].astype(float) if "Volume" in df.columns else None
+    if vol is None or vol.sum() == 0 or len(df) < 30:
+        return None
+    vol_avg20 = vol.rolling(20).mean()
+    returns = close.pct_change(forward).shift(-forward) * 100  # forward return
+    # Remove NaN rows
+    mask = vol.notna() & returns.notna() & (vol > 0)
+    v = vol[mask].values
+    r = returns[mask].values
+    va20 = vol_avg20[mask].values
+    if len(v) < 20:
+        return None
+    # Quartile boundaries
+    q25, q50, q75 = np.percentile(v, [25, 50, 75])
+    quartile_labels  = ["Q1 (lowest)", "Q2", "Q3", "Q4 (highest)"]
+    quartile_avg_ret, quartile_hit_rate, quartile_med_ret = [], [], []
+    for lo, hi in [(0, q25), (q25, q50), (q50, q75), (q75, np.inf)]:
+        mask_q = (v >= lo) & (v < hi) if hi < np.inf else (v >= lo)
+        r_q = r[mask_q]
+        if len(r_q) == 0:
+            quartile_avg_ret.append(0.0)
+            quartile_hit_rate.append(50.0)
+            quartile_med_ret.append(0.0)
+        else:
+            quartile_avg_ret.append(float(np.mean(r_q)))
+            quartile_hit_rate.append(float(np.mean(r_q > 0) * 100))
+            quartile_med_ret.append(float(np.median(r_q)))
+    # Pearson correlation vol → next return
+    corr = float(np.corrcoef(v, r)[0, 1]) if len(v) > 2 else 0.0
+    # Breakout analysis – need signal column
+    success_ratios, fail_ratios = [], []
+    if "signal" in df.columns and "EMA_short" in df.columns:
+        sig = df["signal"].fillna(0)
+        ema_s = df["EMA_short"].astype(float)
+        ema_l = df["EMA_long"].astype(float)
+        sig_arr = sig.values
+        v_full = vol.values
+        va_full = vol_avg20.values
+        cl_full = close.values
+        for i in range(1, len(df) - 1):
+            if sig_arr[i] == 1 and sig_arr[i-1] != 1:  # BUY signal fired
+                if pd.isna(va_full[i]) or va_full[i] == 0:
+                    continue
+                ratio = v_full[i] / va_full[i]
+                # Success = next candle closed higher
+                if cl_full[i+1] > cl_full[i]:
+                    success_ratios.append(ratio)
+                else:
+                    fail_ratios.append(ratio)
+    bo_success = float(np.mean(success_ratios)) if success_ratios else None
+    bo_fail = float(np.mean(fail_ratios)) if fail_ratios else None
+    # Text summary
+    vol_last = float(v[-1]) if len(v) else 0
+    va20_last = float(va20[-1]) if len(va20) and not np.isnan(va20[-1]) else 1
+    vol_ratio = vol_last / va20_last if va20_last > 0 else 1.0
+    q4_ret  = quartile_avg_ret[3]
+    q1_ret  = quartile_avg_ret[0]
+    vol_effect = q4_ret - q1_ret
+    if vol_effect > 0.3: summary = f"HIGH VOLUME predicts UPSIDE: Q4 avg +{q4_ret:.2f}% vs Q1 +{q1_ret:.2f}% (diff {vol_effect:+.2f}%)"
+    elif vol_effect < -0.3: summary = f"HIGH VOLUME predicts DOWNSIDE: Q4 avg {q4_ret:.2f}% vs Q1 {q1_ret:.2f}%"
+    else: summary = f"Volume has LOW predictive power for next-candle direction (diff {vol_effect:+.2f}%)"
+ 
+    if bo_success and bo_fail and bo_success > bo_fail * 1.2:
+        summary += f" | Breakouts confirmed by volume: success avg {bo_success:.1f}x vs fail {bo_fail:.1f}x avg"
+    return {
+        "quartile_labels": quartile_labels,
+        "quartile_avg_ret": quartile_avg_ret,
+        "quartile_hit_rate": quartile_hit_rate,
+        "quartile_med_ret": quartile_med_ret,
+        "quartile_bounds": (float(q25), float(q50), float(q75)),
+        "vol_avg": float(va20_last),
+        "vol_ratio_now": vol_ratio,
+        "breakout_success_vol_ratio": bo_success,
+        "breakout_fail_vol_ratio": bo_fail,
+        "n_success": len(success_ratios),
+        "n_fail": len(fail_ratios),
+        "correlation": corr,
+        "signal_vol_summary": summary,
+    }
+ 
+def draw_volume_profile(ax_price, ax_vp, df: pd.DataFrame, bins: int = 35):
+    """
+    Draw Volume Profile as a horizontal bar chart on *ax_vp*, and annotate
+    POC / Value Area lines on the price panel *ax_price*.
+    Parameters
+    ax_price: matplotlib Axes – the main price panel
+    ax_vp: matplotlib Axes – dedicated VP panel (placed to the right)
+    df: price DataFrame with Close + Volume columns
+    bins: number of price buckets
+    """
+    vp = volume_profile(df, bins=bins)
+    if vp is None:
+        return
+    bin_prices, bin_vols = np.array(vp["bin_prices"]), np.array(vp["bin_vols"])
+    poc_price, va_low, va_high = float(vp["poc_price"]), float(vp["va_low"]), float(vp["va_high"]) 
+    # Colour coding
+    vol_max = bin_vols.max()
+    colors = []
+    for i, (bp, bv) in enumerate(zip(bin_prices, bin_vols)):
+        if i == vp["poc_bin"]: 
+            colors.append("#e53935") # POC – red
+        elif va_low <= bp <= va_high:
+            colors.append("#1565c0") # Value Area – blue
+        elif bv >= np.percentile(bin_vols[bin_vols>0], 75):
+            colors.append("#4fc3f7") # HVN – light blue
+        else:
+            colors.append("#b0bec5") # Normal – grey
+    ax_vp.barh(bin_prices, bin_vols, height=vp["bin_size"] * 0.85, color=colors, alpha=0.85)
+    ax_vp.axhline(poc_price, color="#e53935", lw=1.2, ls="--", alpha=0.9)
+    ax_vp.axhline(va_low, color="#1565c0", lw=0.8, ls=":", alpha=0.7)
+    ax_vp.axhline(va_high, color="#1565c0", lw=0.8, ls=":", alpha=0.7)
+    ax_vp.set_xlabel("Volume", fontsize=7)
+    ax_vp.tick_params(axis="both", labelsize=7)
+    ax_vp.set_title("Volume Profile", fontsize=8)
+    ax_vp.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f"{x/1e6:.1f}M" if x >= 1e6 else f"{x/1e3:.0f}k"))
+    # Annotate price panel with POC + VA
+    if ax_price is not None:
+        ax_price.axhline(poc_price, color="#e53935", lw=1.0, ls="--", alpha=0.6, label=f"POC ${poc_price:,.0f}")
+        ax_price.axhspan(va_low, va_high, alpha=0.05, color="#1565c0", label=f"Value Area ${va_low:,.0f}–${va_high:,.0f}")
+
 def _draw_price_panel(ax, df, close, trades, p, zoom=False):
     """Draw price panel with MA, BB and trades. zoom=True = last 6 months."""
     ax.plot(close.index, close.values, color="#1a1a2e", lw=1.2 if not zoom else 1.5, label="Price", zorder=3)
@@ -414,29 +721,31 @@ def plot_asset(result: dict, save_path: str = None):
         Rows         : Price panel, Equity curve, RSI, MACD, ATR.
     """
     df = result["price_df"]; eq = result["equity_df"]; trades = result["trades_df"]
-    close  = df["Close"].astype(float)
+    close = df["Close"].astype(float)
     name = result["asset"]; p = result["p"]
     # Zoom window – last 6 months
     zoom_start = df.index[-1] - pd.DateOffset(months=6)
     df_z = df[df.index >= zoom_start]; close_z = close[close.index >= zoom_start]; eq_z = eq[eq.index >= zoom_start]
     ts = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
     fig = plt.figure(figsize=(26, 18))
-    fig.suptitle(f"{name}  {result.get('profile','')}  –  Backtest Results\n Generated: {ts}", fontsize=16, fontweight="bold", y=0.995)
+    fig.suptitle(f"{name}  {result.get('profile','')} – Backtest Results\n Generated: {ts}", fontsize=16, fontweight="bold", y=0.995)
     gs = gridspec.GridSpec(5, 2, hspace=0.55, wspace=0.08, height_ratios=[3, 1, 1, 1, 1], width_ratios=[2, 1])
     # Price panels
     ax1 = fig.add_subplot(gs[0, 0])
     _draw_price_panel(ax1, df, close, trades, p, zoom=False)
     mc_profile = result.get("profile", "TECH")
     mc_meta = MC_PROFILE_META.get(mc_profile, MC_PROFILE_META["TECH"])
-    draw_monte_carlo(ax1, close, profile=mc_profile)  
-    ax1.set_title(f"Price + MA + Bollinger Bands + Trades  (full period) | MC {MC_SIMULATIONS}× / {MC_DAYS}d  [{mc_meta['label']}]", fontsize=10)
+    draw_monte_carlo(ax1, close, profile=mc_profile)
+    draw_prophet(ax1, close, n_days=MC_DAYS)
+    ax1.set_title(f"Price + MA + Bollinger Bands + Trades (full period) | MC {MC_SIMULATIONS}× / {MC_DAYS}d [{mc_meta['label']}] + Prophet", fontsize=10)
     ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
     # Price zoom     
     ax1z = fig.add_subplot(gs[0, 1])
     _draw_price_panel(ax1z, df_z, close_z, trades, p, zoom=True)
     draw_monte_carlo(ax1z, close_z, profile=mc_profile)
+    draw_prophet(ax1z, close, n_days=MC_DAYS)
     ax1z.xaxis.set_major_formatter(mdates.DateFormatter("%m/%y"))
-    ax1z.set_title("Zoom – last 6 months", fontsize=10, color="#1565c0")
+    ax1z.set_title("Zoom – last 6 months + MC & Prophet forecast", fontsize=10, color="#1565c0")
     for spine in ax1z.spines.values():
         spine.set_edgecolor("#1565c0")
         spine.set_linewidth(1.5)
@@ -600,7 +909,7 @@ def plot_summary(results: list):
     ax.set_ylabel("Win Rate (%)"); ax.set_title("Trade Success Rate")
     ax.set_ylim(0, 100); ax.legend(); ax.grid(axis="y", alpha=0.3)
     plt.tight_layout()
-    fname = f"summary_comparison.png"
+    fname = os.path.join(OUTPUT_DIR, "summary_comparison.png")
     plt.savefig(fname, dpi=150, bbox_inches="tight")
     print(f"\n  → Summary chart saved: {fname}")
     plt.close()
@@ -608,7 +917,7 @@ def plot_summary(results: list):
 def export_table_png(table: list, headers: list, results: list):
     """Export summary results table to PNG file."""
     ts_label = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
-    fname    = f"summary_table.png"
+    fname = os.path.join(OUTPUT_DIR, "summary_table.png") 
     n_rows = len(table); n_cols = len(headers)
     fig_h = 1.2 + n_rows * 0.42
     fig, ax = plt.subplots(figsize=(max(18, n_cols * 1.5), fig_h))
@@ -711,36 +1020,36 @@ def run_hourly_signals(interval: str = "1h"):
                 continue
             df = compute_indicators(raw.copy(), p); last = df.iloc[-1]; c = df["Close"].astype(float)
             price = float(c.iloc[-1]); prev = float(c.iloc[-2]); change = (price - prev) / prev * 100
-            atr       = float(last["ATR"])       if not pd.isna(last["ATR"])       else 0
-            rsi       = float(last["RSI"])       if not pd.isna(last["RSI"])       else 50
-            bb_pct    = float(last["BB_pct"])    if not pd.isna(last["BB_pct"])    else 0.5
-            bb_upper  = float(last["BB_upper"])  if not pd.isna(last["BB_upper"])  else price
-            bb_lower  = float(last["BB_lower"])  if not pd.isna(last["BB_lower"])  else price
-            macd      = float(last["MACD"])      if not pd.isna(last["MACD"])      else 0
-            macd_sig  = float(last["MACD_sig"])  if not pd.isna(last["MACD_sig"])  else 0
+            atr = float(last["ATR"]) if not pd.isna(last["ATR"]) else 0
+            rsi = float(last["RSI"]) if not pd.isna(last["RSI"]) else 50
+            bb_pct = float(last["BB_pct"]) if not pd.isna(last["BB_pct"]) else 0.5
+            bb_upper = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price
+            bb_lower = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price
+            macd = float(last["MACD"]) if not pd.isna(last["MACD"]) else 0
+            macd_sig = float(last["MACD_sig"]) if not pd.isna(last["MACD_sig"]) else 0
             macd_hist = float(last["MACD_hist"]) if not pd.isna(last["MACD_hist"]) else 0
             ema_short = float(last["EMA_short"]) if not pd.isna(last["EMA_short"]) else price
-            ema_long  = float(last["EMA_long"])  if not pd.isna(last["EMA_long"])  else price
+            ema_long = float(last["EMA_long"]) if not pd.isna(last["EMA_long"])  else price
             sma_short = float(last["SMA_short"]) if not pd.isna(last["SMA_short"]) else price
-            rsi_mid   = (p["RSI_OB"] + p["RSI_OS"]) / 2
+            rsi_mid = (p["RSI_OB"] + p["RSI_OS"]) / 2
             conds_buy = {"MA": ema_short > ema_long,"RSI": rsi < rsi_mid,"BB": bb_pct < 0.4,"MACD": macd > macd_sig,"ATR": price > sma_short,}
-            buy_score  = sum(conds_buy.values()); sell_score = sum(not v for v in conds_buy.values())
+            buy_score = sum(conds_buy.values()); sell_score = sum(not v for v in conds_buy.values())
             if buy_score >= 3: signal = "BUY"
             elif sell_score >= 3: signal = "SELL"
             else: signal = "NEU"
             def _ic(v): return "✔" if v else "x"
             ind_icons = (f'{_ic(conds_buy["MA"])}  {_ic(conds_buy["RSI"])}  {_ic(conds_buy["BB"])}  {_ic(conds_buy["MACD"])}  {_ic(conds_buy["ATR"])}')
             # Price levels
-            buffer      = 0.005
-            buy_limit   = bb_lower * (1 + buffer)
-            stop_loss   = buy_limit - p["ATR_SL_MULT"] * atr
-            risk_per    = buy_limit - stop_loss
-            tp1         = buy_limit + risk_per
-            sl_pct      = (price - stop_loss)  / price * 100 if price > 0 else 0
-            tp1_pct     = (tp1   - price)      / price * 100 if price > 0 else 0
-            bb_up_pct   = (bb_upper - price)   / price * 100 if price > 0 else 0
-            chg_str     = f"{change:+.2f}%"
-            arrow       = "▲" if change >= 0 else "▼"
+            buffer = 0.005
+            buy_limit = bb_lower * (1 + buffer)
+            stop_loss = buy_limit - p["ATR_SL_MULT"] * atr
+            risk_per = buy_limit - stop_loss
+            tp1 = buy_limit + risk_per
+            sl_pct = (price - stop_loss) / price * 100 if price > 0 else 0
+            tp1_pct = (tp1 - price) / price * 100 if price > 0 else 0
+            bb_up_pct = (bb_upper - price) / price * 100 if price > 0 else 0
+            chg_str = f"{change:+.2f}%"
+            arrow = "▲" if change >= 0 else "▼"
             print(f"{signal:<4}  BUY:{buy_score}/5")
             rows.append([name,profile_name,f"${price:,.2f} {arrow}{chg_str}", signal, f"{buy_score}/5", f"{sell_score}/5", ind_icons,f"${buy_limit:,.2f}", f"${stop_loss:,.2f} (-{sl_pct:.1f}%)", f"${tp1:,.2f} (+{tp1_pct:.1f}%)", f"${bb_upper:,.2f} (+{bb_up_pct:.1f}%)", f"RSI:{rsi:.0f}  MACD:{'▲' if macd_hist>=0 else '▼'}",])
         except Exception as e:
@@ -748,23 +1057,18 @@ def run_hourly_signals(interval: str = "1h"):
             rows.append([name, profile_name, ticker, "ERR", "–", "–", "–", "–", "–", "–", "–", str(e)[:30]])
  
     headers = ["Asset", "Profile", f"Price ({interval})", "Signal","BUY sc.", "SELL sc.", "MA / RSI / BB / MACD / ATR","Buy Limit", "Stop-Loss", "Take Profit 1", "SELL target (BB upper)","RSI / MACD trend"]
-    n_rows = len(rows); n_cols = len(headers)
+    n_rows, n_cols = len(rows), len(headers)
     signal_bg = {"BUY": "#d4edda", "SELL": "#f8d7da", "NEU": "#fff3cd", "N/A": "#eeeeee", "ERR": "#eeeeee"}
     cell_colors = []
     for i, row in enumerate(rows):
         bg = "#EEF2F7" if i % 2 == 0 else "#FFFFFF"
         row_c = []
         for j in range(n_cols):
-            if j == 3:
-                row_c.append(signal_bg.get(row[j], bg))
-            elif j == 7:
-                row_c.append("#e8f5e9")
-            elif j == 8:
-                row_c.append("#fdecea")
-            elif j in (9, 10):
-                row_c.append("#e3f2fd")
-            else:
-                row_c.append(bg)
+            if j == 3: row_c.append(signal_bg.get(row[j], bg))
+            elif j == 7: row_c.append("#e8f5e9")
+            elif j == 8: row_c.append("#fdecea")
+            elif j in (9, 10): row_c.append("#e3f2fd")
+            else: row_c.append(bg)
         cell_colors.append(row_c)
     fig, ax = plt.subplots(figsize=(28, 1.8 + n_rows * 0.60))
     ax.axis("off")
@@ -779,15 +1083,14 @@ def run_hourly_signals(interval: str = "1h"):
             tbl[i, 3].set_text_props(fontweight="bold")
     fig.suptitle(
         f"HOURLY ANALYSIS OF ALL ASSETS  |  Interval: {interval} ({iv['label']})"
-        f"  |  Generated: {ts_label}",
-        fontsize=11, fontweight="bold", y=0.99, color="#1E50A0"
+        f"  |  Generated: {ts_label}", fontsize=11, fontweight="bold", y=0.99, color="#1E50A0"
     )
     plt.tight_layout(); plt.savefig(fname, dpi=150, bbox_inches="tight"); print(f"\n  -> PNG table saved: {fname}"); plt.close()
 
 def export_signals_png(results: list):
     """Export current signals and price levels to PNG table."""
     ts_label = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
-    fname    = f"signals.png"
+    fname = os.path.join(OUTPUT_DIR, "signals.png") 
     rows = []
     for r in results:
         df = r["price_df"].copy()
@@ -808,15 +1111,11 @@ def export_signals_png(results: list):
         ema_long = float(last["EMA_long"]) if not pd.isna(last["EMA_long"]) else price
         sma_short = float(last["SMA_short"]) if not pd.isna(last["SMA_short"]) else price
         rsi_mid = (p["RSI_OB"] + p["RSI_OS"]) / 2
-
         conds_buy = {"MA": ema_short > ema_long,"RSI": rsi < rsi_mid,"BB": bb_pct < 0.4,"MACD": macd > macd_sig,"ATR": price > sma_short,}
         buy_score  = sum(conds_buy.values()); sell_score = sum(not v for v in conds_buy.values())
-        if buy_score >= 3:
-            signal = "BUY"
-        elif sell_score >= 3:
-            signal = "SELL"
-        else:
-            signal = "NEU"
+        if buy_score >= 3: signal = "BUY"
+        elif sell_score >= 3: signal = "SELL"
+        else: signal = "NEU"
         stop_loss = price - p["ATR_SL_MULT"] * atr
         take_profit = price + 2 * p["ATR_SL_MULT"] * atr
         sell_target = bb_upper
@@ -826,20 +1125,9 @@ def export_signals_png(results: list):
         st_pct = (sell_target - price) / price * 100
         def _ic(v): return "✔" if v else "×"
         ind_icons = f'{_ic(conds_buy["MA"])}    {_ic(conds_buy["RSI"])}    {_ic(conds_buy["BB"])}    {_ic(conds_buy["MACD"])}    {_ic(conds_buy["ATR"])}'
-        rows.append([
-            name, 
-            r.get("profile", "-"), 
-            f"${price:,.2f}", signal, 
-            f"{buy_score}/5", 
-            f"{sell_score}/5", 
-            ind_icons, 
-            f"${buy_zone:,.2f}", 
-            f"${stop_loss:,.2f}  ({sl_pct:.1f}%)", 
-            f"${take_profit:,.2f}  (+{tp_pct:.1f}%)", 
-            f"${sell_target:,.2f}  (+{st_pct:.1f}%)",
-        ])
+        rows.append([name, r.get("profile", "-"), f"${price:,.2f}", signal, f"{buy_score}/5", f"{sell_score}/5", ind_icons, f"${buy_zone:,.2f}", f"${stop_loss:,.2f}  ({sl_pct:.1f}%)", f"${take_profit:,.2f}  (+{tp_pct:.1f}%)", f"${sell_target:,.2f}  (+{st_pct:.1f}%)",])
     headers = ["Asset", "Profile", "Price", "Signal", "BUY sc.", "SELL sc.", "MA RSI BB MACD ATR", "BUY zone", "Stop-Loss", "Take Profit", "SELL target"]
-    n_rows = len(rows); n_cols = len(headers)
+    n_rows, n_cols = len(rows), len(headers)
     fig, ax = plt.subplots(figsize=(24, 1.4 + n_rows * 0.52))
     ax.axis("off")
     # Cell colors
@@ -881,7 +1169,7 @@ def export_order_levels_png(results: list):
       - Risk USD   = (Buy Limit − Stop-Loss) × qty at $10,000 capital
     """    
     ts_label = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
-    fname = f"order_levels.png"
+    fname = os.path.join(OUTPUT_DIR, "order_levels.png") 
     rows = []
     for r in results:
         df = r["price_df"].copy()
@@ -905,12 +1193,9 @@ def export_order_levels_png(results: list):
         # Overall signal
         conds_buy = [ema_short > ema_long, rsi < rsi_mid, bb_pct < 0.4, macd > macd_sig, price > sma_short]
         buy_score = sum(conds_buy)
-        if buy_score >= 3:
-            signal = "BUY"
-        elif sum(not c for c in conds_buy) >= 3:
-            signal = "SELL"
-        else:
-            signal = "NEU"
+        if buy_score >= 3: signal = "BUY"
+        elif sum(not c for c in conds_buy) >= 3: signal = "SELL"
+        else: signal = "NEU"
         # Price levels
         buffer = 0.005                                 # 0.5% buffer above BB lower
         buy_limit = bb_lower * (1 + buffer)            # Buy Limit = BB lower + buffer
@@ -919,8 +1204,8 @@ def export_order_levels_png(results: list):
         tp1 = buy_limit + risk_per                     # TP1 = R:R 1:1
         tp2 = bb_upper                                 # TP2 = BB upper
         # Risk in USD with capital INITIAL_CAP
-        qty_est    = (INITIAL_CAP * 0.95) / buy_limit if buy_limit > 0 else 0
-        risk_usd   = risk_per * qty_est
+        qty_est = (INITIAL_CAP * 0.95) / buy_limit if buy_limit > 0 else 0
+        risk_usd = risk_per * qty_est
         # Percentage distance from current price
         bl_pct = (buy_limit - price) / price * 100
         sl_pct = (stop_loss - price) / price * 100
@@ -929,14 +1214,7 @@ def export_order_levels_png(results: list):
         rr1 = abs((tp1 - buy_limit) / risk_per) if risk_per > 0 else 0
         rr2 = abs((tp2 - buy_limit) / risk_per) if risk_per > 0 else 0
         rows.append([name,r.get("profile", "-"), f"${price:,.2f}", signal, f"${buy_limit:,.2f} ({bl_pct:+.1f}%)", f"${stop_loss:,.2f} ({sl_pct:+.1f}%)", f"${tp1:,.2f} ({tp1_pct:+.1f}%) 1:{rr1:.1f}", f"${tp2:,.2f} ({tp2_pct:+.1f}%) 1:{rr2:.1f}", f"${risk_usd:,.0f}",])
-    headers = [
-        "Asset", "Profile", "Price", "Signal",
-        "Buy Limit (BB low+0.5%)",
-        "Stop-Loss (ATR x mult.)",
-        "Take Profit 1 (R:R 1:1)",
-        "Take Profit 2 (BB upper)",
-        "Risk/trade USD"
-    ]
+    headers = ["Asset", "Profile", "Price", "Signal", "Buy Limit (BB low+0.5%)", "Stop-Loss (ATR x mult.)", "Take Profit 1 (R:R 1:1)", "Take Profit 2 (BB upper)", "Risk/trade USD"]
     n_rows = len(rows); n_cols = len(headers)
     fig, ax = plt.subplots(figsize=(26, 1.6 + n_rows * 0.72))
     ax.axis("off")
@@ -1006,13 +1284,7 @@ def print_current_signals(results: list):
         sma_short = float(last["SMA_short"]) if not pd.isna(last["SMA_short"]) else price
         rsi_mid = (p["RSI_OB"] + p["RSI_OS"]) / 2
         # State of each indicator
-        conds_buy = {
-            "MA Crossover": ema_short > ema_long,
-            "RSI":          rsi < rsi_mid,
-            "Bollinger":    bb_pct < 0.4,
-            "MACD":         macd > macd_sig,
-            "ATR trend":    price > sma_short,
-        }
+        conds_buy = {"MA Crossover": ema_short > ema_long, "RSI": rsi < rsi_mid, "Bollinger": bb_pct < 0.4, "MACD": macd > macd_sig, "ATR trend": price > sma_short,}
         buy_score  = sum(conds_buy.values()); sell_score = sum(not v for v in conds_buy.values())
         if buy_score >= 3:
             signal_str = "✔ ACTIVE BUY SIGNAL"; signal_col = "BUY"
@@ -1026,44 +1298,46 @@ def print_current_signals(results: list):
         sell_target = bb_upper # BB upper zone
         buy_zone_lo = bb_lower # BB lower zone
         buy_zone_hi = price
-        print(f"\n  {'─'*68}")
-        print(f"  {name:<14} [{r.get('profile',''):10s}]   Price: ${price:>10.2f}   {signal_str}")
-        print(f"  {'─'*68}")
-        print(f"  {'Indicator':<16} {'Value':>12}   {'BUY?':^5}   {'Details'}")
-        print(f"  {'':-<16} {'':-<12}   {'':-<5}   {'':-<30}")
+        print(f"\n{'─'*68}")
+        print(f"{name:<14} [{r.get('profile',''):10s}]   Price: ${price:>10.2f}   {signal_str}")
+        print(f"{'─'*68}")
+        print(f"{'Indicator':<16} {'Value':>12}   {'BUY?':^5}   {'Details'}")
+        print(f"{'':-<16} {'':-<12}   {'':-<5}   {'':-<30}")
         details = {
             "MA Crossover": (f"EMA{p['MA_SHORT']}={'>' if ema_short>ema_long else '<'}EMA{p['MA_LONG']}", f"EMA{p['MA_SHORT']}={ema_short:.2f}  EMA{p['MA_LONG']}={ema_long:.2f}"),
-            "RSI":          (f"{rsi:.1f}", f"< {rsi_mid:.0f} for BUY  |  > {rsi_mid:.0f} for SELL"),
-            "Bollinger":    (f"BB%={bb_pct:.2f}", f"BB lower={bb_lower:.2f}  BB upper={bb_upper:.2f}"),
-            "MACD":         (f"{'MACD>Sig' if macd>macd_sig else 'MACD<Sig'}", f"MACD={macd:.3f}  Signal={macd_sig:.3f}"),
-            "ATR trend":    (f"{'price>SMA' if price>sma_short else 'price<SMA'}", f"Price={price:.2f}  SMA{p['MA_SHORT']}={sma_short:.2f}"),
+            "RSI": (f"{rsi:.1f}", f"< {rsi_mid:.0f} for BUY  |  > {rsi_mid:.0f} for SELL"),
+            "Bollinger": (f"BB%={bb_pct:.2f}", f"BB lower={bb_lower:.2f}  BB upper={bb_upper:.2f}"),
+            "MACD": (f"{'MACD>Sig' if macd>macd_sig else 'MACD<Sig'}", f"MACD={macd:.3f}  Signal={macd_sig:.3f}"),
+            "ATR trend": (f"{'price>SMA' if price>sma_short else 'price<SMA'}", f"Price={price:.2f}  SMA{p['MA_SHORT']}={sma_short:.2f}"),
         }
         for ind, is_buy in conds_buy.items():
             val, det = details[ind]
             icon = "✔" if is_buy else "x"
-            print(f"  {ind:<16} {val:>12}   {icon}     {det}")
-        print(f"  {'─'*68}")
-        print(f"  BUY score: {buy_score}/5   SELL score: {sell_score}/5")
-        print(f"  BUY zone:      ${buy_zone_lo:>10.2f}  –  ${buy_zone_hi:.2f}  (BB lower – current price)")
-        print(f"  Stop-Loss:     ${stop_loss:>10.2f}           ({p['ATR_SL_MULT']}× ATR={atr:.2f} below price)")
+            print(f"{ind:<16} {val:>12}   {icon}     {det}")
+        print(f"{'─'*68}")
+        print(f"BUY score: {buy_score}/5   SELL score: {sell_score}/5")
+        print(f"BUY zone:      ${buy_zone_lo:>10.2f}  –  ${buy_zone_hi:.2f}  (BB lower – current price)")
+        print(f"Stop-Loss:     ${stop_loss:>10.2f}           ({p['ATR_SL_MULT']}× ATR={atr:.2f} below price)")
         sl_pct = (price - stop_loss) / price * 100
         tp_pct = (take_profit - price) / price * 100
         st_pct = (sell_target - price) / price * 100
-        print(f"                              ({sl_pct:.1f} % below current price)")
-        print(f"  Take Profit:   ${take_profit:>10.2f}           (+{tp_pct:.1f} %, R:R 1:2)")
-        print(f"  SELL target:   ${sell_target:>10.2f}           (+{st_pct:.1f} %, BB upper)")
+        print(f"                            ({sl_pct:.1f} % below current price)")
+        print(f"Take Profit:   ${take_profit:>10.2f}           (+{tp_pct:.1f} %, R:R 1:2)")
+        print(f"SELL target:   ${sell_target:>10.2f}           (+{st_pct:.1f} %, BB upper)")
     print()
 
 # Main program
 def main():
-    print("  MULTI-ASSET TRADING ALGORITHM BACKTEST")
-    print(f"  Period: {START_DATE}  →  {END_DATE}")
-    print(f"  Initial capital: ${INITIAL_CAP:,.0f} / asset")
-    print(f"  Indicators: MA Crossover, RSI, Bollinger Bands, MACD, ATR")
-    print(f"  Profiles: COMMODITY / FOREX_IDX / TECH / DEFENSIVE (per-asset)")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    print(f"Output folder: {OUTPUT_DIR}/")
+    print("MULTI-ASSET TRADING ALGORITHM BACKTEST")
+    print(f"Period: {START_DATE}  →  {END_DATE}")
+    print(f"Initial capital: ${INITIAL_CAP:,.0f} / asset")
+    print(f"Indicators: MA Crossover, RSI, Bollinger Bands, MACD, ATR")
+    print(f"Profiles: COMMODITY / FOREX_IDX / TECH / DEFENSIVE (per-asset)")
     results = []
     for name, ticker in ASSETS.items():
-        print(f"\n  Downloading data: {name} ({ticker}) ...")
+        print(f"\nDownloading data: {name} ({ticker}) ...")
         try:
             raw = yf.download(ticker, start=START_DATE, end=END_DATE, progress=False, auto_adjust=True)
             if raw.empty:
@@ -1077,66 +1351,42 @@ def main():
             if len(raw) < min_bars:
                 print(f"Insufficient data for {name}, skipping.")
                 continue
-            df  = compute_indicators(raw.copy(), p)
-            df  = generate_signals(df, p)
+            df = compute_indicators(raw.copy(), p)
+            df = generate_signals(df, p)
             res = run_backtest(df, name, p)
             res["profile"] = profile_name
             results.append(res)
-            print(f"  ✔  [{profile_name:10s}]  return: {res['total_return']:+.1f} %  "
-                  f"(B&H: {res['bh_return']:+.1f} %)  "
-                  f"| Sharpe: {res['sharpe']:.2f}  "
-                  f"| Win rate: {res['win_rate']:.0f} %")
+            print(f"  ✔  [{profile_name}]  return: {res['total_return']:+.1f}% "f"(B&H: {res['bh_return']:+.1f} %) "f"| Sharpe: {res['sharpe']:.2f} "f"| Win rate: {res['win_rate']:.0f} %")
             # Individual graph
-            save_path = f"chart_{name.lower()}.png"
+            save_path = os.path.join(OUTPUT_DIR, f"chart_{name.lower()}.png")
+            #print(f"  → Saving chart: {save_path}")
             plot_asset(res, save_path=save_path)
         except Exception as e:
-            print(f" Error for {name}: {e}")
+            print(f"Error for {name}: {e}")
     if not results:
-        print("\n Failed to download any data.")
+        print("\nFailed to download any data.")
         return
     # sort results by total return
     results = sorted(results, key=lambda r: r["total_return"]  if r["total_return"] == r["total_return"] else float("-inf"), reverse=True)    
     # Summary table and graphs
-    print("\n" + "=" * 62)
-    print("  SUMMARY RESULTS")
+    print("\n"+"=" * 62)
+    print("SUMMARY RESULTS")
     table = []
     for r in results:
         tr = r["trades_df"]; n_buy  = len(tr[tr["type"] == "BUY"]); n_sell = len(tr[tr["type"] == "SELL"]); n_stop = len(tr[tr["type"] == "STOP-LOSS"])
-        table.append([
-            r["asset"],
-            r.get("profile", "-"),
-            f"${r['final_value']:,.0f}",
-            f"{r['total_return']:+.1f} %",
-            f"{r['bh_return']:+.1f} %",
-            f"{r['total_return'] - r['bh_return']:+.1f} %",
-            f"{r['win_rate']:.0f} %",
-            f"{r['sharpe']:.2f}",
-            f"{r['max_drawdown']:.1f} %",
-            f"{r['profit_factor']:.2f}",
-            f"{r['avg_buy_score']:.2f}",
-            f"{r['avg_sell_score']:.2f}",
-        ])
-    headers = ["Asset", "Profile", "Final value", "Return", "B&H", "Alpha", "Win rate", "Sharpe", "Max Drawdown", "Profit Factor ", "Avg Buy Score(0-5)", "Avg Sell Score(0-5)"]
+        table.append([r["asset"], r.get("profile", "-"), f"${r['final_value']:,.0f}", f"{r['total_return']:+.1f} %", f"{r['bh_return']:+.1f} %", f"{r['total_return'] - r['bh_return']:+.1f} %", f"{r['win_rate']:.0f} %", f"{r['sharpe']:.2f}", f"{r['max_drawdown']:.1f} %", f"{r['profit_factor']:.2f}",])
+    headers = ["Asset", "Profile", "Final value", "Return", "B&H", "Alpha", "Win rate", "Sharpe", "Max Drawdown", "Profit Factor ",]
     print(tabulate(table, headers=headers, tablefmt="rounded_outline", stralign="right", numalign="right"))
     # Best asset
     best = max(results, key=lambda r: r["total_return"])
-    print(f"\n Best asset: {best['asset']}" f"(return {best['total_return']:+.1f} %)")
+    print(f"\nBest asset: {best['asset']}" f"(return {best['total_return']:+.1f} %)")
     export_signals_png(results)
     export_table_png(table, headers, results)
     export_order_levels_png(results)    
     # Summary comparison graph
     plot_summary(results)
-    print("\n  Done! Charts are saved as PNG files.")
+    print("\nDone! Charts are saved as PNG files.")
 
-INTERVAL_SETTINGS = {
-    "1m":  {"period": "5d",   "lookback": 200,  "label": "1 minute",    "mc_days": 60},
-    "5m":  {"period": "30d",  "lookback": 200,  "label": "5 minutes",   "mc_days": 120},
-    "15m": {"period": "30d",  "lookback": 200,  "label": "15 minutes",  "mc_days": 96},
-    "30m": {"period": "30d",  "lookback": 200,  "label": "30 minutes",  "mc_days": 48},
-    "1h":  {"period": "180d", "lookback": 200,  "label": "1 hour",      "mc_days": 48},
-    "4h":  {"period": "180d", "lookback": 200,  "label": "4 hours",     "mc_days": 30},
-    "1d":  {"period": "6mo",  "lookback": 90,   "label": "1 day",       "mc_days": 30},
-}
 def analyze_asset(name: str, interval: str = "1d"):
     """
     Quick analysis of a single asset – downloads current data
@@ -1166,9 +1416,9 @@ def analyze_asset(name: str, interval: str = "1d"):
         return
     profile_name = ASSET_PROFILES.get(name, "TECH"); p = PROFILES[profile_name]
     ts = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
-    print(f"  QUICK ANALYSIS: {name} ({ticker})  [{iv['label']}]")
-    print(f"  {ts}")
-    print(f"  Downloading data  (interval={interval}, period={iv['period']})...")
+    print(f"QUICK ANALYSIS: {name} ({ticker})  [{iv['label']}]")
+    print(f"{ts}")
+    print(f"Downloading data  (interval={interval}, period={iv['period']})...")
     try:
         # 4h = resample from 1h (Yahoo Finance doesn't support 4h)
         if interval == "4h":
@@ -1181,46 +1431,41 @@ def analyze_asset(name: str, interval: str = "1d"):
             if isinstance(raw.columns, pd.MultiIndex):
                 raw.columns = raw.columns.get_level_values(0)
         if raw.empty:
-            print(f"  Failed to download data for {name}.")
+            print(f"Failed to download data for {name}.")
             return
         min_bars = max(p["MA_LONG"] + 5, 50)
         if len(raw) < min_bars:
-            print(f"  Insufficient data ({len(raw)} candles, need {min_bars}).")
-            print(f"  Try longer period or different interval.")
+            print(f"Insufficient data ({len(raw)} candles, need {min_bars}).")
+            print(f"Try longer period or different interval.")
             return
     except Exception as e:
-        print(f"  Download error: {e}")
+        print(f"Download error: {e}")
         return
     df = compute_indicators(raw.copy(), p); last = df.iloc[-1]; c = df["Close"].astype(float)
     price  = float(c.iloc[-1])
     prev_close = float(c.iloc[-2])
     change = (price - prev_close) / prev_close * 100
-    atr       = float(last["ATR"])      if not pd.isna(last["ATR"])      else 0
-    rsi       = float(last["RSI"])      if not pd.isna(last["RSI"])      else 50
-    bb_pct    = float(last["BB_pct"])   if not pd.isna(last["BB_pct"])   else 0.5
-    bb_upper  = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price
-    bb_lower  = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price
-    macd      = float(last["MACD"])     if not pd.isna(last["MACD"])     else 0
-    macd_sig  = float(last["MACD_sig"]) if not pd.isna(last["MACD_sig"]) else 0
-    macd_hist = float(last["MACD_hist"])if not pd.isna(last["MACD_hist"])else 0
-    ema_short = float(last["EMA_short"])if not pd.isna(last["EMA_short"])else price
-    ema_long  = float(last["EMA_long"]) if not pd.isna(last["EMA_long"]) else price
-    sma_short = float(last["SMA_short"])if not pd.isna(last["SMA_short"])else price
-    rsi_mid   = (p["RSI_OB"] + p["RSI_OS"]) / 2
+    atr = float(last["ATR"]) if not pd.isna(last["ATR"]) else 0
+    rsi = float(last["RSI"]) if not pd.isna(last["RSI"]) else 50
+    bb_pct = float(last["BB_pct"]) if not pd.isna(last["BB_pct"]) else 0.5
+    bb_upper = float(last["BB_upper"]) if not pd.isna(last["BB_upper"]) else price
+    bb_lower = float(last["BB_lower"]) if not pd.isna(last["BB_lower"]) else price
+    macd = float(last["MACD"]) if not pd.isna(last["MACD"]) else 0
+    macd_sig = float(last["MACD_sig"]) if not pd.isna(last["MACD_sig"]) else 0
+    macd_hist = float(last["MACD_hist"]) if not pd.isna(last["MACD_hist"])else 0
+    ema_short = float(last["EMA_short"]) if not pd.isna(last["EMA_short"])else price
+    ema_long = float(last["EMA_long"]) if not pd.isna(last["EMA_long"]) else price
+    sma_short = float(last["SMA_short"]) if not pd.isna(last["SMA_short"])else price
+    rsi_mid = (p["RSI_OB"] + p["RSI_OS"]) / 2
     # Indicator status
     conds = {"MA Crossover": ema_short > ema_long,"RSI": rsi < rsi_mid,"Bollinger": bb_pct < 0.4,"MACD": macd > macd_sig,"ATR trend": price > sma_short,}
     buy_score = sum(conds.values()); sell_score = sum(not v for v in conds.values())
     # Overall recommendation
-    if buy_score >= 4:
-        rec = "✔ STRONG BUY SIGNAL"
-    elif buy_score == 3:
-        rec = "✔ BUY SIGNAL"
-    elif sell_score >= 4:
-        rec = "x STRONG SELL SIGNAL"
-    elif sell_score == 3:
-        rec = "x SELL SIGNAL"
-    else:
-        rec = "o NEUTRAL – WAIT"
+    if buy_score >= 4: rec = "✔ STRONG BUY SIGNAL"
+    elif buy_score == 3: rec = "✔ BUY SIGNAL"
+    elif sell_score >= 4: rec = "x STRONG SELL SIGNAL"
+    elif sell_score == 3: rec = "x SELL SIGNAL"
+    else: rec = "o NEUTRAL – WAIT"
     # MACD histogram trend strength
     hist_trend = "strengthening ▲" if macd_hist > 0 else "weakening ▼"
     arrow = "▲" if change >= 0 else "▼"
@@ -1263,9 +1508,9 @@ def analyze_asset(name: str, interval: str = "1d"):
     print(f"Stop-Loss:   ${stop_loss:>10,.2f}  (-{sl_pct:.1f}%,  {p['ATR_SL_MULT']}× ATR)")
     print(f"Take Profit: ${tp1:>10,.2f}  (+{tp1_pct:.1f}%,  R:R 1:1)")
     print(f"SELL target: ${tp2:>10,.2f}  (+{tp2_pct:.1f}%,  BB upper)")
-    print(f"Risk/trade: ${risk_usd:>9,.0f}  (with capital ${INITIAL_CAP:,})")
+    print(f"Risk/trade:  ${risk_usd:>9,.0f}  (with capital ${INITIAL_CAP:,})")
     # Context – where we are in BB band
-    print(f"\n  CONTEXT:")
+    print(f"\nCONTEXT:")
     if bb_pct < 0.2: bb_comment = "Very close to lower band – historically good buy zone"
     elif bb_pct < 0.4: bb_comment = "Close to lower band – slightly undervalued"
     elif bb_pct < 0.6: bb_comment = "Middle of band – neutral position"
@@ -1279,7 +1524,111 @@ def analyze_asset(name: str, interval: str = "1d"):
     print(f"Bollinger: {bb_comment}")
     print(f"RSI:       {rsi_comment}")
     print(f"MACD:      Histogram {hist_trend} – trend {'strengthening, hold position' if macd_hist > 0 else 'weakening, be cautious'}")
-    print()
+    print(f"\nSPEED & VOLUME (last 10 intervals):")
+    close_s, high_s, low_s = df["Close"].astype(float), df["High"].astype(float), df["Low"].astype(float)
+    vol_s = df["Volume"].astype(float) if "Volume" in df.columns else None
+    # Rate of Change – how much % price moved in last 10 candles
+    roc_period = min(10, len(df) - 1)
+    roc = (close_s.iloc[-1] - close_s.iloc[-roc_period - 1]) / close_s.iloc[-roc_period - 1] * 100
+    roc_arrow = "▲" if roc >= 0 else "▼"
+    print(f"Rate of Change (ROC-{roc_period}):  {roc_arrow} {roc:+.2f}%  over last {roc_period} candles")
+    # ATR trend – expanding or contracting vs 10 bars ago
+    atr_now = float(df["ATR"].iloc[-1]) if not pd.isna(df["ATR"].iloc[-1])  else 0
+    atr_prev = float(df["ATR"].iloc[-min(11, len(df))]) if not pd.isna(df["ATR"].iloc[-min(11, len(df))]) else atr_now
+    atr_change = (atr_now - atr_prev) / atr_prev * 100 if atr_prev > 0 else 0
+    if atr_change > 10: atr_trend_str = f"▲ EXPANDING  +{atr_change:.1f}%  – volatility increasing, momentum building"
+    elif atr_change < -10: atr_trend_str = f"▼ CONTRACTING {atr_change:.1f}%  – volatility decreasing, move losing steam"
+    else: atr_trend_str = f"→ STABLE  {atr_change:+.1f}%  – normal volatility"
+    print(f"ATR trend (vs 10 bars ago):  {atr_trend_str}")
+    # Candle body size – current vs 20-bar average
+    body_now = abs(float(df["Close"].iloc[-1]) - float(df["Open"].iloc[-1])) if "Open" in df.columns else 0
+    bodies = (df["Close"].astype(float) - df["Open"].astype(float)).abs() if "Open" in df.columns else pd.Series([0])
+    body_avg = float(bodies.iloc[-20:].mean()) if len(bodies) >= 20 else float(bodies.mean())
+    body_ratio = body_now / body_avg if body_avg > 0 else 1.0
+    if body_ratio > 1.5: body_str = f"${body_now:.2f} ({body_ratio:.1f}x avg) – LARGE candle, strong conviction"
+    elif body_ratio < 0.5: body_str = f"${body_now:.2f}  ({body_ratio:.1f}x avg) – small candle, low conviction / indecision"
+    else: body_str = f"${body_now:.2f} ({body_ratio:.1f}x avg) – normal candle size"
+    print(f"Candle body size:            {body_str}")
+    # Volume analysis (skip for assets without volume data e.g. forex futures)
+    if vol_s is not None and vol_s.iloc[-1] > 0 and vol_s.sum() > 0:
+        vol_now = float(vol_s.iloc[-1])
+        vol_avg = float(vol_s.iloc[-20:].mean()) if len(vol_s) >= 20 else float(vol_s.mean())
+        vol_ratio = vol_now / vol_avg if vol_avg > 0 else 1.0
+        vol_pct = (vol_ratio - 1) * 100
+        if vol_ratio > 2.0:
+            vol_str = f"SPIKE  {vol_pct:+.0f}% above avg – strong institutional interest"
+        elif vol_ratio > 1.3:
+            vol_str = f"ABOVE AVERAGE  {vol_pct:+.0f}% – confirms price move"
+        elif vol_ratio < 0.7:
+            vol_str = f"BELOW AVERAGE  {vol_pct:+.0f}% – weak conviction, be cautious"
+        else:
+            vol_str = f"AVERAGE  {vol_pct:+.0f}% – normal activity"
+        print(f"Volume (current candle):     {vol_str}, Volume value {vol_now:,.0f}  (avg {vol_avg:,.0f})")
+        # 5. Volume trend – last 5 candles increasing or decreasing?
+        if len(vol_s) >= 6:
+            vol_5 = vol_s.iloc[-5:].values
+            vol_trend_slope = float(np.polyfit(range(len(vol_5)), vol_5, 1)[0])
+            if vol_trend_slope > vol_avg * 0.02:
+                vol_trend_str = "▲ increasing last 5 candles – momentum building"
+            elif vol_trend_slope < -vol_avg * 0.02:
+                vol_trend_str = "▼ decreasing last 5 candles – momentum fading"
+            else:
+                vol_trend_str = "→ flat last 5 candles"
+            print(f"Volume trend (5 candles):    {vol_trend_str}")
+        # 6. OBV direction – does volume confirm price direction?
+        if len(vol_s) >= 10:
+            obv = (np.sign(close_s.diff()) * vol_s).fillna(0).cumsum()
+            obv_now = float(obv.iloc[-1])
+            obv_prev = float(obv.iloc[-6])
+            obv_dir = obv_now - obv_prev
+            if obv_dir > 0 and change >= 0:
+                obv_str = "▲ BULLISH – volume confirms price rise"
+            elif obv_dir < 0 and change < 0:
+                obv_str = "▼ BEARISH – volume confirms price drop"
+            elif obv_dir > 0 and change < 0:
+                obv_str = "⚠ DIVERGENCE – price down but OBV up (potential reversal up)"
+            elif obv_dir < 0 and change >= 0:
+                obv_str = "⚠ DIVERGENCE – price up but OBV down (potential reversal down)"
+            else:
+                obv_str = "→ neutral"
+            print(f"OBV direction (5 candles):   {obv_str}")
+    else:
+        print(f"Volume:                      N/A (not available for this asset/interval)")
+    # VOLUME PROFILE & MOMENTUM
+    print(f"\nVOLUME PROFILE & MOMENTUM:")
+    df_sig = generate_signals(df.copy(), p)
+    vm = analyze_volume_momentum(df_sig)
+    vp = volume_profile(df_sig, bins=35)
+    if vm is None:
+        print(f"Volume data not available for this asset/interval.")
+    else:
+        # Volume Profile key levels
+        if vp:
+            print(f"Point of Control (POC): ${vp['poc_price']:,.2f} (most traded price)")
+            print(f"Value Area: ${vp['va_low']:,.2f}  –  ${vp['va_high']:,.2f}(70% of volume)")
+            hvn_str = "  ".join([f"${h:,.2f}" for h in vp["hvn_prices"][:4]])
+            lvn_str = "  ".join([f"${l:,.2f}" for l in vp["lvn_prices"][:4]])
+            print(f"HVN (support/resistance): {hvn_str}")
+            print(f"LVN (fast-pass zones): {lvn_str}")
+            # Where is current price relative to POC
+            poc_diff = (price - vp["poc_price"]) / vp["poc_price"] * 100
+            if abs(poc_diff) < 1.0: poc_comment = "At POC – strong support/resistance zone"
+            elif poc_diff > 0: poc_comment = f"Above POC by {poc_diff:+.1f}% – price above fair value"
+            else:  poc_comment = f"Below POC by {poc_diff:+.1f}% – price below fair value"
+            print(f"Current vs POC: {poc_comment}")
+        # Volume quartile analysis
+        print(f"\nNext-candle return by volume quartile:")
+        print(f"{'Quartile':<16} {'Avg return':>10} {'Hit rate':>10} {'Median ret':>10}")
+        print(f"{'─'*16} {'─'*10} {'─'*10} {'─'*10}")
+        for i, (lbl, avg, hr, med) in enumerate(zip(vm["quartile_labels"], vm["quartile_avg_ret"], vm["quartile_hit_rate"], vm["quartile_med_ret"])):
+            arrow = "▲" if avg > 0 else "▼"
+            mark  = " ←" if i == 3 else ""
+            print(f"{lbl:<16} {arrow} {avg:>+7.3f}%  {hr:>8.1f}%  {med:>+9.3f}%{mark}")
+        print(f"Pearson corr (vol → return): {vm['correlation']:+.3f}  ", end="")
+        if abs(vm["correlation"]) > 0.15:
+            print(f"({'significant' if abs(vm['correlation']) > 0.25 else 'moderate'} relationship)")
+        else:
+            print("(weak relationship)")
 
 if __name__ == "__main__":
     import sys
@@ -1292,15 +1641,13 @@ if __name__ == "__main__":
         return default
     if args and args[0] == "--analyze":
         if len(args) < 2:
-            print("\n Usage: python trading_backtest.py --analyze <Asset> [--interval <interval>]")
-            print("   Example:  python trading_backtest.py --analyze Gold --interval 1h")
-            print(f"   Intervals: {', '.join(INTERVAL_SETTINGS.keys())}")
+            print("\nUsage: python trading_backtest.py --analyze <Asset> [--interval <interval>]")
+            print("Example:  python trading_backtest.py --analyze Gold --interval 1h")
+            print(f"Intervals: {', '.join(INTERVAL_SETTINGS.keys())}")
         else:
             analyze_asset(args[1], interval=_get_interval(args, default="1d"))
-
     elif args and args[0] == "--signals-hourly":
         interval = _get_interval(args, default="1h")
         run_hourly_signals(interval=interval)
-
     else:
         main()
