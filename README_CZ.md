@@ -47,8 +47,6 @@ Strategie kombinuje 5 klíčových pilířů:
 **Žádný indikátor neobchoduje sám.** * **BUY signál:** Vyžaduje skóre ≥ 3 z 5 (např. EMA roste + RSI < 50 + MACD Bullish).
 * **Risk Management:** Automatický Stop-Loss nastaven na `2.0 * ATR`.
 
-<img width="3585" height="3347" alt="signals" src="https://github.com/user-attachments/assets/4c3c616c-da1e-482e-83b0-2b40adfa55a4" />
-
 ## 5. Backtesting a Metriky výkonnosti
 Systém počítá pokročilé metriky pro objektivní zhodnocení:
 * **Alpha:** Nadvýnos nad strategií "Kup a drž" (Buy & Hold).
@@ -56,13 +54,15 @@ Systém počítá pokročilé metriky pro objektivní zhodnocení:
 * **Max Drawdown:** Největší historický pokles kapitálu.
 * **Profit Factor:** Poměr hrubých zisků k hrubým ztrátám.
 
-<img width="3885" height="4603" alt="order_levels" src="https://github.com/user-attachments/assets/12636854-f916-4111-b4b1-e10505168aa5" />
+<img width="2384" height="1477" alt="summary_comparison" src="https://github.com/user-attachments/assets/2b867069-9616-4cdb-a66e-6f68d010fa3e" />
 
 ## 6. Analýza rychlosti a objemu (Speed & Volume)
 Tato sekce doplňuje signály o pohled na "přesvědčení" trhu:
 * **ROC (Rate of Change):** Rychlost pohybu.
 * **OBV Divergence:** Klíčový indikátor pro odhalení nákupů institucí.
 * **Candle Body Ratio:** Síla aktuální svíčky.
+
+<img width="548" height="406" alt="Snímek obrazovky z 2026-04-01 19-24-11" src="https://github.com/user-attachments/assets/ca8174c4-fbfc-4610-8c42-c67b9ea89148" />
 
 ## 7. Predikční modely
 Systém nabízí dva pohledy do budoucnosti:
