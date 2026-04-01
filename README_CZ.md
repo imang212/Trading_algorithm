@@ -82,12 +82,14 @@ Skript podporuje tři hlavní režimy:
 ## 9. Streamlit Dashboard
 Interaktivní webové rozhraní zahrnuje:
 * **Signal Overview:** Přehledná tabulka s nákupními zónami.
+<img width="1850" height="957" alt="Snímek obrazovky z 2026-04-01 19-08-54" src="https://github.com/user-attachments/assets/3ef8964f-a8b4-454e-93c0-985a54c27557"/>
+<p></p>
+
 * **Asset Detail:** Interaktivní grafy Plotly a Volume profily.
-* **Backtest Summary:** Vizualizace equity křivek a srovnání assetů.
-
-<img width="1850" height="957" alt="Snímek obrazovky z 2026-04-01 19-08-54" src="https://github.com/user-attachments/assets/3ef8964f-a8b4-454e-93c0-985a54c27557" />
-
 <img width="1850" height="957" alt="Snímek obrazovky z 2026-04-01 19-06-14" src="https://github.com/user-attachments/assets/50ac244a-0793-4e81-b0c1-9d849bacfeb9" />
+<p></p>
+
+* **Backtest Summary:** Vizualizace equity křivek a srovnání assetů.
 
 ## 10. Disclaimer
 Tento software je určen pouze pro vzdělávací účely. Obchodování na finančních trzích zahrnuje vysoké riziko ztráty. Minulé výsledky nejsou zárukou budoucích výnosů.
