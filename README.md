@@ -6,22 +6,12 @@
 # Multi-Asset Trading Algorithm & Dashboard
 A comprehensive system for automated backtesting, real-time analysis, and market trend forecasting (Monte Carlo & Meta Prophet) for Commodities, Stocks, and Forex.
 
+<img width="1850" height="957" alt="obrazek" src="https://github.com/user-attachments/assets/80b738e4-fbb8-45c4-b7b5-92a173dbc420" />
+
 ## Quick Start
 1. **Install Dependencies:** `pip install -r requirements.txt`
 2. **Launch Dashboard:** `streamlit run dashboard.py`
 3. **Terminal Analysis:** `python trading_backtest.py --analyze Gold --interval 1h`
-
-## Table of Contents
-1. [System Overview](#1-system-overview)
-2. [Configuration & Asset Profiles](#2-configuration--asset-profiles)
-3. [Technical Indicators](#3-technical-indicators)
-4. [Combined Trading Logic](#4-combined-trading-logic)
-5. [Backtesting & Performance Metrics](#5-backtesting--performance-metrics)
-6. [Speed & Volume Analysis](#6-speed--volume-analysis)
-7. [Forecasting Models](#7-forecasting-models)
-8. [Usage & Modes](#8-usage--modes)
-9. [Streamlit Dashboard](#9-streamlit-dashboard)
-10. [Disclaimer](#10-disclaimer)
 
 ## 1. System Overview
 The script performs a historical **backtest of a combined technical strategy** on 15+ assets. The system automatically fetches OHLCV data, calculates indicators, and generates signals based on a voting consensus (at least 3 out of 5 indicators must agree).
@@ -46,12 +36,18 @@ The strategy is built on 5 pillars:
 * **BUY Signal:** Requires a score of ≥ 3/5 (e.g., Rising EMA + RSI < 50 + Bullish MACD).
 * **Risk Management:** Automatic Stop-Loss calculated as `2.0 * ATR`.
 
+<img width="3585" height="3347" alt="signals" src="https://github.com/user-attachments/assets/4c3c616c-da1e-482e-83b0-2b40adfa55a4" />
+
 ## 5. Backtesting & Performance Metrics
 The system provides professional metrics for objective evaluation:
 * **Alpha:** Excess return over the "Buy & Hold" benchmark.
 * **Sharpe Ratio:** Risk-adjusted return.
 * **Max Drawdown:** Peak-to-trough capital decline.
 * **Profit Factor:** Ratio of gross profits to gross losses.
+
+<img width="3885" height="4603" alt="order_levels" src="https://github.com/user-attachments/assets/12636854-f916-4111-b4b1-e10505168aa5" />
+
+<img width="2384" height="1477" alt="summary_comparison" src="https://github.com/user-attachments/assets/2b867069-9616-4cdb-a66e-6f68d010fa3e" />
 
 ## 6. Speed & Volume Analysis
 This section supplements core signals with market conviction data:
@@ -64,16 +60,24 @@ Two advanced forecasting methods are integrated:
 1.  **Monte Carlo (1000+ Simulations):** Probability fans (Random Walk, GARCH for Crypto, Mean Reversion for Commodities).
 2.  **Meta Prophet:** A robust statistical model capturing seasonality and trend shifts.
 
+<img width="642" height="468" alt="Snímek obrazovky z 2026-04-01 19-02-22" src="https://github.com/user-attachments/assets/209e1727-6ac8-4246-ae97-75f643eee5cb" />
+
 ## 8. Usage & Modes
 * `--analyze [Asset]`: In-depth technical analysis for a single ticker.
 * `--signals-hourly`: Market-wide signal overview (1h/4h intervals).
 * **Default Mode:** Full historical portfolio backtest.
+
+<img width="969" height="802" alt="Snímek obrazovky z 2026-04-01 19-01-01" src="https://github.com/user-attachments/assets/4b72f51e-2a77-4d20-b01b-465c4082e275" />
 
 ## 9. Streamlit Dashboard
 The interactive web UI features:
 * **Signal Overview:** Real-time buy zones and target levels.
 * **Asset Detail:** Interactive Plotly charts & Volume profiles.
 * **Backtest Summary:** Equity curve visualizations and multi-asset comparisons.
+
+<img width="1850" height="957" alt="Snímek obrazovky z 2026-04-01 19-08-54" src="https://github.com/user-attachments/assets/3ef8964f-a8b4-454e-93c0-985a54c27557" />
+
+<img width="1850" height="957" alt="Snímek obrazovky z 2026-04-01 19-06-14" src="https://github.com/user-attachments/assets/50ac244a-0793-4e81-b0c1-9d849bacfeb9" />
 
 ## 10. Disclaimer
 This software is for educational purposes only. Trading financial markets involves significant risk. Past performance does not guarantee future results.
