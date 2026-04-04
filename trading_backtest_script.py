@@ -38,14 +38,109 @@ ASSETS = {
     "MSFT": "MSFT", "Nokia": "NOKIA.HE", "Ericsson": "ERIC", "GOOGL": "GOOGL", "Apple": "AAPL", "Tesla": "TSLA", "Netflix": "NFLX", "Netflix_DE": "NFC.DE", "Colt": "CZG.PR", "CEZ": "CEZ.PR", "ORCL": "ORCL", "NVDA": "NVDA", "AMD": "AMD", "Adobe": "ADBE", "Intel": "INTC", "Spotify": "SPOT", "Coinbase": "COIN",
     # Defensive stocks
     "Coca-Cola": "KO", "CocaColaCCH": "CCH.L", "Altria": "MO", "Nestle": "NESN.SW", "AgnicoEagle": "AEM", "NewmontMining": "NEM", "NovoNordisk": "NOVO-B.CO", "Moneta": "MONET.PR", "KomBanka": "KOMB.PR", "UBS": "UBSG.SW", "Zurrich_Insurance": "ZURN.SW", "Nordea_Bank": "NDA-FI.HE", 
-    "British_American_Tobacco": "BTI", "Equinor": "EQNR", "Equinor_NO": "EQNR.NO", "Allianz": "ALV.DE",
+    "British_American_Tobacco": "BTI", "Equinor": "EQNR", "Equinor_NO": "EQNR.NO", "Allianz": "ALV.DE", "Procter&Gamble": "PG",
 }
 # Yearly data range for backtest
-START_DATE = "2021-01-01"; END_DATE = datetime.today().strftime("%Y-%m-%d")
+START_DATE = "2018-01-01"; END_DATE = datetime.today().strftime("%Y-%m-%d")
 OUTPUT_DIR = "backtest_results"
 INITIAL_CAP = 10_000  # USD per asset
 COMMISSION = 0.001 # 0.1% per trade
 SLIPPAGE = 0.0005 # 0.05%
+
+_FX_PAIRS = {
+    "EUR": "EURUSD=X", "GBP": "GBPUSD=X", "CZK": "CZKUSD=X",
+    "DKK": "DKKUSD=X", "SEK": "SEKUSD=X", "NOK": "NOKUSD=X",
+    "CHF": "CHFUSD=X", "JPY": "JPYUSD=X", "CAD": "CADUSD=X",
+    "AUD": "AUDUSD=X", "HKD": "HKDUSD=X", "SGD": "SGDUSD=X",
+    "KRW": "KRWUSD=X", "CNY": "CNYUSD=X", "INR": "INRUSD=X",
+    "BRL": "BRLUSD=X", "MXN": "MXNUSD=X",
+}
+
+# Runtime cache so we don't re-fetch the same currency twice per session
+_currency_cache: dict = {}
+ 
+def detect_currency(ticker: str) -> str:
+    """
+    Auto-detect the trading currency of *ticker* using yf.Ticker.fast_info.
+    Returns the ISO 4217 currency code (e.g. "USD", "EUR", "CZK").
+    Falls back to "USD" if detection fails.
+    """
+    if ticker in _currency_cache:
+        return _currency_cache[ticker]
+    try:
+        info = yf.Ticker(ticker).fast_info
+        currency = str(info.get("currency", "USD") or "USD").upper()
+        # Yahoo Finance sometimes returns "GBp" (pence) for London stocks
+        if currency == "GBP" or currency == "GBP":
+            currency = "GBP"
+        if currency == "GBP" and ticker.endswith(".L"):
+            # LSE prices are in pence (GBp), convert to pounds first
+            currency = "GBp"   # special marker handled in convert_to_usd
+    except Exception:
+        currency = "USD"
+    _currency_cache[ticker] = currency
+    return currency
+ 
+def get_fx_rate(currency: str, start: str = None, end: str = None):
+    """
+    Return a USD conversion rate for *currency*.
+    Parameters
+    currency : ISO 4217 code detected by detect_currency()
+    start, end : optional date range for historical series
+    Returns
+    pd.Series (daily rates) if start/end given, else float scalar.
+    1.0 for USD (no conversion needed).
+    """
+    # GBp (pence) = GBP / 100
+    gbp_pence = currency == "GBp"
+    base_currency = "GBP" if gbp_pence else currency
+    if base_currency == "USD":
+        if start and end: return pd.Series(dtype=float)
+        return 1.0
+    pair = _FX_PAIRS.get(base_currency)
+    if pair is None:
+        return 1.0
+    try:
+        if start and end:
+            raw = yf.download(pair, start=start, end=end, progress=False, auto_adjust=True)
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+            rate = raw["Close"].astype(float) if not raw.empty else pd.Series(dtype=float)
+        else:
+            raw = yf.download(pair, period="5d", progress=False, auto_adjust=True)
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+            rate = float(raw["Close"].dropna().iloc[-1]) if not raw.empty else 1.0
+        # Apply pence → pounds → USD (divide by 100)
+        if gbp_pence:
+            if isinstance(rate, pd.Series):
+                rate = rate / 100
+            else:
+                rate = rate / 100
+        return rate
+    except Exception:
+        return 1.0
+ 
+def convert_to_usd(df: pd.DataFrame, currency: str, start: str = None, end: str = None) -> pd.DataFrame:
+    """
+    Convert OHLCV DataFrame from *currency* to USD.
+    Fetches daily FX rates and multiplies Open/High/Low/Close columns.
+    Volume is unchanged (contracts/shares keep their count).
+    Handles GBp (pence) automatically by dividing by 100 before conversion.
+    """
+    if currency in ("USD",):
+        return df
+    fx = get_fx_rate(currency, start=start, end=end)
+    df = df.copy()
+    price_cols = [c for c in ["Open", "High", "Low", "Close"] if c in df.columns]
+    if isinstance(fx, float):
+        for col in price_cols:
+            df[col] = df[col].astype(float) * fx
+    elif isinstance(fx, pd.Series) and not fx.empty:
+        fx_aligned = fx.reindex(df.index, method="ffill").bfill()
+        for col in price_cols:
+            df[col] = df[col].astype(float) * fx_aligned.values
+    return df
 
 # PARAMETER PROFILES BY ASSET TYPE
 # COMMODITY – Gold, Silver, Oil
@@ -73,7 +168,7 @@ ASSET_PROFILES = {
     "Gold": "COMMODITY", "Silver": "COMMODITY", "Oil": "COMMODITY", "Brent_Oil": "COMMODITY", "USD": "FOREX_IDX", "Bitcoin": "CRYPTO", "SP500": "DEFENSIVE", "MSCIWorld": "DEFENSIVE", "Nasdaq100": "DEFENSIVE", 
     "MSFT": "TECH", "Nokia": "TECH", "Ericsson": "TECH", "GOOGL": "TECH", "Apple": "TECH", "Tesla": "TECH", "Netflix": "TECH", "Netflix_DE": "TECH", "Colt": "TECH", "Spotify": "TECH", "ORCL": "TECH", "NVDA": "TECH", "AMD": "TECH", "Adobe": "TECH", "Intel": "TECH", "Coinbase": "TECH",
     "Coca-Cola": "DEFENSIVE", "CocaColaCCH": "DEFENSIVE", "Altria": "DEFENSIVE", "Nestle": "DEFENSIVE", "AgnicoEagle": "DEFENSIVE", "NewmontMining": "DEFENSIVE", "NovoNordisk": "DEFENSIVE", "Moneta": "DEFENSIVE", "KomBanka": "DEFENSIVE", "UBS":"DEFENSIVE", "Zurrich_Insurrance": "DEFENSIVE", "Nordea_Bank": "DEFENSIVE",
-    "British_American_Tobacco": "DEFENSIVE", "Equinor": "DEFENSIVE", "Equinor_NO": "DEFENSIVE", "Allianz": "DEFENSIVE",
+    "British_American_Tobacco": "DEFENSIVE", "Equinor": "DEFENSIVE", "Equinor_NO": "DEFENSIVE", "Allianz": "DEFENSIVE", "Procter&Gamble": "DEFENSIVE",
 }
 
 INTERVAL_SETTINGS = {
@@ -362,10 +457,35 @@ def monte_carlo_forecast(close: pd.Series, profile: str = "TECH", n_days: int = 
     else:
         paths = _mc_random_walk(returns, last_price, n_sim, n_days, rng)
     last_date = close.index[-1]
-    future_dates = pd.bdate_range(start=last_date + pd.Timedelta(days=1), periods=n_days)
+    # Detect bar frequency from index so future dates match the interval
+    # (e.g. 1h data → future timestamps are hourly, not daily business days)
+    if len(close.index) >= 2: median_delta = pd.Series(close.index).diff().dropna().median()
+    else: median_delta = pd.Timedelta(days=1)
+    # Round median_delta to the nearest clean interval
+    total_seconds = median_delta.total_seconds()
+    if total_seconds <= 90: bar_delta = pd.Timedelta(minutes=1)
+    elif total_seconds <= 360: bar_delta = pd.Timedelta(minutes=5)
+    elif total_seconds <= 1080: bar_delta = pd.Timedelta(minutes=15)
+    elif total_seconds <= 2160: bar_delta = pd.Timedelta(minutes=30)
+    elif total_seconds <= 7200: bar_delta = pd.Timedelta(hours=1)
+    elif total_seconds <= 21600: bar_delta = pd.Timedelta(hours=4)
+    else: bar_delta = pd.Timedelta(days=1)
+    if bar_delta >= pd.Timedelta(days=1):
+        # Daily or longer – use business days (skip weekends)
+        future_dates = pd.bdate_range(start=last_date + pd.Timedelta(days=1), periods=n_days)
+    else:
+        # Intraday – generate at exact bar frequency
+        # Skip known market-closed hours (simple heuristic: 00:00–06:00 UTC)
+        future_dates = []
+        ts = last_date + bar_delta
+        while len(future_dates) < n_days:
+            # Skip weekends
+            if ts.weekday() < 5: future_dates.append(ts)
+            ts += bar_delta
+        future_dates = pd.DatetimeIndex(future_dates)
     return {"dates": future_dates, "p10": np.percentile(paths, 10, axis=0), "p25": np.percentile(paths, 25, axis=0),
         "p50": np.percentile(paths, 50, axis=0), "p75": np.percentile(paths, 75, axis=0), "p90": np.percentile(paths, 90, axis=0),
-        "last": last_price, "profile": profile,}
+        "last": last_price, "profile": profile, "bar_delta": bar_delta,}
 
 def draw_monte_carlo(ax, close: pd.Series, profile: str = "TECH"):
     """
@@ -959,34 +1079,6 @@ def export_table_png(table: list, headers: list, results: list):
     print(f"  → Table exported: {fname}")
     plt.close()
 
-def compute_yearly_breakdown(results: list) -> dict:
-    """
-        Compute per-year performance metrics for every asset in ``results``.
-        Returns:
-            dict  –  { asset_name: { year: { return, win_rate, sharpe, trades } } }
-        """
-    breakdown = {}
-    for r in results:
-        eq = r["equity_df"]["equity"]; trades = r["trades_df"]; name = r["asset"]; breakdown[name] = {}
-        years = sorted(eq.index.year.unique())
-        for yr in years:
-            eq_yr = eq[eq.index.year == yr]
-            if len(eq_yr) < 2:
-                continue
-            # Yearly return
-            yr_return = (eq_yr.iloc[-1] - eq_yr.iloc[0]) / eq_yr.iloc[0] * 100
-            # Yearly Sharpe (daily returns)
-            daily_ret = eq_yr.pct_change().dropna()
-            sharpe_yr = (daily_ret.mean() / daily_ret.std() * np.sqrt(252)
-                         if daily_ret.std() > 0 else 0)
-            # Yearly win rate
-            tr_yr = trades[pd.to_datetime(trades["date"]).dt.year == yr]
-            sell_yr = tr_yr[tr_yr["type"].isin(["SELL", "STOP-LOSS", "CLOSE"])]
-            wins_yr  = sell_yr[sell_yr["pnl"] > 0]
-            wr_yr    = len(wins_yr) / len(sell_yr) * 100 if len(sell_yr) > 0 else float("nan")
-            breakdown[name][yr] = {"return": yr_return,"win_rate": wr_yr,"sharpe": sharpe_yr,"trades": len(sell_yr),}
-    return breakdown
-
 def run_hourly_signals(interval: str = "1h"):
     """
     Downloads hourly (or 4h) data for all assets,
@@ -997,7 +1089,7 @@ def run_hourly_signals(interval: str = "1h"):
     """
     iv = INTERVAL_SETTINGS.get(interval, INTERVAL_SETTINGS["1h"])
     ts_label = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
-    fname = f"signals_{interval}.png"
+    fname = os.path.join(OUTPUT_DIR, f"signals_{interval}.png")
     print(f"HOURLY ANALYSIS OF ALL ASSETS  [{iv['label']}]")
     print(f"{ts_label}")
     rows = []
@@ -1091,6 +1183,7 @@ def export_signals_png(results: list):
     """Export current signals and price levels to PNG table."""
     ts_label = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
     fname = os.path.join(OUTPUT_DIR, "signals.png") 
+
     rows = []
     for r in results:
         df = r["price_df"].copy()
@@ -1351,6 +1444,12 @@ def main():
             if len(raw) < min_bars:
                 print(f"Insufficient data for {name}, skipping.")
                 continue
+            raw = raw[raw["Close"].notna() & (raw["Close"] > 0)]  # drop NaN/zero closes upfront
+            # Auto-detect currency and convert to USD if needed
+            currency = detect_currency(ticker)
+            if currency != "USD":
+                raw = convert_to_usd(raw, currency, start=START_DATE, end=END_DATE)
+                print(f"  [FX] {name} ({currency} → USD)")
             df = compute_indicators(raw.copy(), p)
             df = generate_signals(df, p)
             res = run_backtest(df, name, p)
@@ -1433,6 +1532,13 @@ def analyze_asset(name: str, interval: str = "1d"):
         if raw.empty:
             print(f"Failed to download data for {name}.")
             return
+        # Auto-detect currency and convert to USD if needed
+        currency = detect_currency(ticker)
+        if currency != "USD":
+            rate = get_fx_rate(currency)
+            rate_val = float(rate) if isinstance(rate, float) else float(rate.dropna().iloc[-1]) if hasattr(rate, "dropna") else 1.0
+            raw = convert_to_usd(raw, currency)
+            print(f"  [FX] Converted from {currency} to USD  (rate ~{rate_val:.5f})")
         min_bars = max(p["MA_LONG"] + 5, 50)
         if len(raw) < min_bars:
             print(f"Insufficient data ({len(raw)} candles, need {min_bars}).")
@@ -1442,7 +1548,7 @@ def analyze_asset(name: str, interval: str = "1d"):
         print(f"Download error: {e}")
         return
     df = compute_indicators(raw.copy(), p); last = df.iloc[-1]; c = df["Close"].astype(float)
-    price  = float(c.iloc[-1])
+    price = float(c.iloc[-1])
     prev_close = float(c.iloc[-2])
     change = (price - prev_close) / prev_close * 100
     atr = float(last["ATR"]) if not pd.isna(last["ATR"]) else 0
