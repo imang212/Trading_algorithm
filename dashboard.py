@@ -37,13 +37,7 @@ st.markdown("""
 <style>
 /*[data-testid="stSidebar"] { background: #0f1117; }
 [data-testid="stSidebar"] * { color: #e0e0e0 !important; }*/
-.metric-card {
-    background: #1e2130;
-    border-radius: 10px;
-    padding: 14px 18px;
-    border-left: 3px solid #378ADD;
-    margin-bottom: 8px;
-}
+.metric-card { background: #1e2130; border-radius: 10px; padding: 14px 18px; border-left: 3px solid #378ADD; margin-bottom: 8px;}
 .metric-card .label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: .05em; }
 .metric-card .value { font-size: 22px; font-weight: 600; color: #fff; }
 .metric-card .sub   { font-size: 11px; color: #888; margin-top: 2px; }
@@ -425,38 +419,70 @@ elif "Asset Detail" in page:
         st.markdown(sv_html, unsafe_allow_html=True)
     # Price chart with indicators
     st.markdown('<div class="section-title">Price chart</div>', unsafe_allow_html=True)
-    if interval == "1m":
-        _xfmt, _nticks, _dtick, angle = "%H:%M", 25, 5 * 60 * 1000, 25
-    elif interval in ("5m", "15m"):
-        _xfmt, _nticks, _dtick, angle = "%d %b %H:%M", 25, None, 25
-    elif interval == "30m":
-        _xfmt, _nticks, _dtick, angle = "%d %b %H:%M", 25, None, 25
-    elif interval in ("1h", "4h"):
-        _xfmt, _nticks, _dtick, angle = "%d %b", 25, None, 25
-    else:                                
-        _xfmt, _nticks, _dtick, angle = "%d %b %Y", 15, None, 0
-    def _xaxis_cfg(show_labels=True):
-        cfg = dict(showticklabels=show_labels, tickangle=angle, tickfont=dict(size=10), nticks=_nticks,)
-        if _xfmt: cfg["tickformat"] = _xfmt
-        if _dtick: cfg["dtick"] = _dtick
-        return cfg
+    # Using integer positions + custom tick labels removes all gaps.
+    def _gapfree_x(index, max_ticks=14):
+        """
+        Convert a DatetimeIndex to integer positions (0,1,2,...) for gap-free
+        plotting. Returns (x_vals, tickvals, ticktext) ready for update_xaxes.
+        x_vals – integer array to use as x in every trace
+        tickvals – subset of integers to show as tick marks
+        ticktext – formatted label for each tickval
+        """
+        n = len(index); x_vals = list(range(n))
+         # Choose tick format based on interval
+        if _is_intraday:
+            if interval in ("1m",): fmt = "%H:%M"
+            elif interval in ("5m", "15m", "30m"): fmt = "%d %b %H:%M"
+            else: fmt = "%d %b %H:%M"
+        else: fmt = "%d %b %Y"
+        # Pick evenly-spaced tick positions (at most max_ticks)
+        step = max(1, n // max_ticks)
+        tick_idx = list(range(0, n, step))
+        if n - 1 not in tick_idx:
+            tick_idx.append(n - 1)
+        tickvals = tick_idx
+        ticktext = [index[i].strftime(fmt) for i in tick_idx]
+        return x_vals, tickvals, ticktext
+    def _gapfree_xaxis(tickvals, ticktext):
+        """Return update_xaxes kwargs dict for gap-free axis."""
+        return dict(tickmode="array", tickvals=tickvals, ticktext=ticktext, tickangle=-45, tickfont=dict(size=10), showgrid=True, gridcolor="rgba(0,0,0,0.05)",)
+    # X-axis format based on interval
+    _is_intraday = interval not in ("1d",)
+    #if interval == "1m":
+    #    _xfmt, _nticks, _dtick, angle = "%H:%M", 25, 5 * 60 * 1000, 25
+    #elif interval in ("5m", "15m"):
+    #    _xfmt, _nticks, _dtick, angle = "%d %b %H:%M", 25, None, 25
+    #elif interval == "30m":
+    #    _xfmt, _nticks, _dtick, angle = "%d %b %H:%M", 25, None, 25
+    #elif interval in ("1h", "4h"):
+    #    _xfmt, _nticks, _dtick, angle = "%d %b", 25, None, 25
+    #else:                                
+    #    _xfmt, _nticks, _dtick, angle = "%d %b %Y", 15, None, 0
+    #def _xaxis_cfg(show_labels=True):
+    #    cfg = dict(showticklabels=show_labels, tickangle=angle, tickfont=dict(size=9), nticks=_nticks,)
+    #    if _xfmt: cfg["tickformat"] = _xfmt
+    #    if _dtick: cfg["dtick"] = _dtick
+    #    return cfg
     close = df["Close"].astype(float)
     vol = df["Volume"].astype(float) if "Volume" in df.columns else None
     vol_avg20 = vol.rolling(20).mean() if vol is not None else None
+    # Gap-free integer positions
+    _x, _tv, _tt = _gapfree_x(df.index)
+    # Map old index positions to integer for BUY/SELL markers
+    _idx_map = {ts: i for i, ts in enumerate(df.index)}
     fig_pv = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28], vertical_spacing=0.02)
     # Price + MA + BB
-    fig_pv.add_trace(go.Scatter(x=df.index, y=close, name="Price", line=dict(color="#1a1a2e", width=1.6)), row=1, col=1)
-    fig_pv.add_trace(go.Scatter(x=df.index, y=df["EMA_short"], name=f"EMA{p['MA_SHORT']}", line=dict(color="#f39c12", width=1, dash="dot")), row=1, col=1)
-    fig_pv.add_trace(go.Scatter(x=df.index, y=df["EMA_long"], name=f"EMA{p['MA_LONG']}", line=dict(color="#3498db", width=1, dash="dot")), row=1, col=1)
-    fig_pv.add_trace(go.Scatter(x=df.index, y=df["BB_upper"], name="BB Upper", line=dict(color="#4fc3f7", width=0.8, dash="dash")), row=1, col=1)
-    fig_pv.add_trace(go.Scatter(x=df.index, y=df["BB_lower"], name="BB Lower", line=dict(color="#4fc3f7", width=0.8, dash="dash"), fill="tonexty", fillcolor="rgba(79,195,247,0.05)"), row=1, col=1)
+    fig_pv.add_trace(go.Scatter(x=_x, y=close, name="Price", line=dict(color="#1a1a2e", width=1.6)), row=1, col=1)
+    fig_pv.add_trace(go.Scatter(x=_x, y=df["EMA_short"], name=f"EMA{p['MA_SHORT']}", line=dict(color="#f39c12", width=1, dash="dot")), row=1, col=1)
+    fig_pv.add_trace(go.Scatter(x=_x, y=df["EMA_long"], name=f"EMA{p['MA_LONG']}", line=dict(color="#3498db", width=1, dash="dot")), row=1, col=1)
+    fig_pv.add_trace(go.Scatter(x=_x, y=df["BB_upper"], name="BB Upper", line=dict(color="#4fc3f7", width=0.8, dash="dash")), row=1, col=1)
+    fig_pv.add_trace(go.Scatter(x=_x, y=df["BB_lower"], name="BB Lower", line=dict(color="#4fc3f7", width=0.8, dash="dash"), fill="tonexty", fillcolor="rgba(79,195,247,0.05)"), row=1, col=1)
     # BUY/SELL markers
     if not s["df"]["signal"].isna().all():
-        buys_idx  = df[df["signal"] ==  1].index; sells_idx = df[df["signal"] == -1].index
-        if len(buys_idx):
-            fig_pv.add_trace(go.Scatter(x=buys_idx, y=close[buys_idx], mode="markers", name="BUY", marker=dict(symbol="triangle-up", size=7, color="#2ecc71")), row=1, col=1)
-        if len(sells_idx):
-            fig_pv.add_trace(go.Scatter(x=sells_idx, y=close[sells_idx], mode="markers", name="SELL", marker=dict(symbol="triangle-down", size=7, color="#e74c3c")), row=1, col=1) 
+        buys_pos  = [_idx_map[ts] for ts in df[df["signal"] ==  1].index if ts in _idx_map]
+        sells_pos = [_idx_map[ts] for ts in df[df["signal"] == -1].index if ts in _idx_map]
+        if len(buys_pos): fig_pv.add_trace(go.Scatter(x=buys_pos, y=close[buys_pos], mode="markers", name="BUY", marker=dict(symbol="triangle-up", size=6, color="#2ecc71")), row=1, col=1)
+        if len(sells_pos): fig_pv.add_trace(go.Scatter(x=sells_pos, y=close[sells_pos], mode="markers", name="SELL", marker=dict(symbol="triangle-down", size=6, color="#e74c3c")), row=1, col=1) 
     # Price levels – horizontal lines
     for level, color, label in [(s["buy_limit"], "#2ecc71", "Buy Limit"), (s["stop_loss"], "#e74c3c", "Stop-Loss"), (s["tp1"], "#3498db", "TP1"),]:
         fig_pv.add_hline(y=level, line_dash="dot", line_color=color, annotation_text=f" {label} ${level:,.2f}", annotation_position="right", row=1, col=1)
@@ -466,13 +492,13 @@ elif "Asset Detail" in page:
         vol_colors = []
         for i, vv in enumerate(vol.values):
             avg = float(vol_avg20.iloc[i]) if vol_avg20 is not None and not pd.isna(vol_avg20.iloc[i]) else vol_avg_last
-            if vv > avg * 1.5: vol_colors.append("#e74c3c")   # spike – red
-            elif vv > avg * 1.0: vol_colors.append("#27ae60")   # above avg – green
-            else: vol_colors.append("#b0bec5")   # below avg – grey
-        fig_pv.add_trace(go.Bar(x=df.index, y=vol, name="Volume", marker_color=vol_colors, opacity=1), row=2, col=1)
+            vol_colors.append("#e74c3c" if vv > avg * 1.5 else "#27ae60" if vv > avg else "#b0bec5")
+        fig_pv.add_trace(go.Bar(x=_x, y=vol, name="Volume", marker_color=vol_colors, opacity=1), row=2, col=1)
         if vol_avg20 is not None:
-            fig_pv.add_trace(go.Scatter(x=df.index, y=vol_avg20, name="Vol avg 20", line=dict(color="#b0bec5", width=1, dash="dot"), showlegend=True), row=2, col=1)
-    fig_pv.update_layout(height=520, template="plotly_white", plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff", margin=dict(t=10, b=60, l=70, r=140), legend=dict(orientation="h", y=1.02, font_size=10), xaxis=_xaxis_cfg(show_labels=False), xaxis2=_xaxis_cfg(show_labels=True), barmode="overlay",)
+            fig_pv.add_trace(go.Scatter(x=_x, y=vol_avg20, name="Vol avg 20", line=dict(color="#b0bec5", width=1, dash="dot"), showlegend=True), row=2, col=1)
+    fig_pv.update_layout(height=520, template="plotly_white", plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff", margin=dict(t=10, b=60, l=70, r=140), legend=dict(orientation="h", y=1.02, font_size=10), barmode="overlay",)
+    fig_pv.update_xaxes(row=1, col=1, **_gapfree_xaxis(_tv, _tt), showticklabels=False)
+    fig_pv.update_xaxes(row=2, col=1, **_gapfree_xaxis(_tv, _tt), showticklabels=True)
     fig_pv.update_yaxes(row=1, col=1, title_text="Price (USD)")
     fig_pv.update_yaxes(range=[0, max(vol) * 1.1], row=2, col=1, title_text="Volume", tickformat=".2s")
     st.plotly_chart(fig_pv, use_container_width=True)
@@ -480,18 +506,21 @@ elif "Asset Detail" in page:
     st.markdown('<div class="section-title">Technical indicators</div>', unsafe_allow_html=True)
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.4, 0.35, 0.25], vertical_spacing=0.03)
     # RSI
-    fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI", line=dict(color="#e67e22", width=1.4)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=_x, y=df["RSI"], name="RSI", line=dict(color="#e67e22", width=1.4)), row=1, col=1)
     fig.add_hline(y=p["RSI_OB"], line_color="#c0392b", line_dash="dash", row=1, col=1)
     fig.add_hline(y=p["RSI_OS"], line_color="#27ae60", line_dash="dash", row=1, col=1)
     fig.add_hline(y=50, line_color="#95a5a6", line_dash="dot", row=1, col=1)
     # MACD
     macd_colors = ["#27ae60" if v >= 0 else "#e74c3c" for v in df["MACD_hist"].fillna(0)]
-    fig.add_trace(go.Bar(x=df.index, y=df["MACD_hist"], name="Histogram", marker_color=macd_colors, opacity=0.7), row=2, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD"], name="MACD", line=dict(color="#378ADD", width=1.2)), row=2, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["MACD_sig"], name="Signal", line=dict(color="#e74c3c", width=1.2)), row=2, col=1)
+    fig.add_trace(go.Bar(x=_x, y=df["MACD_hist"], name="Histogram", marker_color=macd_colors, opacity=0.7), row=2, col=1)
+    fig.add_trace(go.Scatter(x=_x, y=df["MACD"], name="MACD", line=dict(color="#378ADD", width=1.2)), row=2, col=1)
+    fig.add_trace(go.Scatter(x=_x, y=df["MACD_sig"], name="Signal", line=dict(color="#e74c3c", width=1.2)), row=2, col=1)
     # ATR
-    fig.add_trace(go.Scatter(x=df.index, y=df["ATR"], name="ATR", line=dict(color="#9b59b6", width=1), fill="tozeroy", fillcolor="rgba(155,89,182,0.08)"), row=3, col=1)
+    fig.add_trace(go.Scatter(x=_x, y=df["ATR"], name="ATR", line=dict(color="#9b59b6", width=1), fill="tozeroy", fillcolor="rgba(155,89,182,0.08)"), row=3, col=1)
     fig.update_layout(height=440, template="plotly_white", plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff", margin=dict(t=10, b=20, l=70, r=20), legend=dict(orientation="h", y=1.02, font_size=10), xaxis3=dict(showticklabels=True),)
+    fig.update_xaxes(row=1, col=1, **_gapfree_xaxis(_tv, _tt), showticklabels=False)
+    fig.update_xaxes(row=2, col=1, **_gapfree_xaxis(_tv, _tt), showticklabels=False)
+    fig.update_xaxes(row=3, col=1, **_gapfree_xaxis(_tv, _tt), showticklabels=True)
     fig.update_yaxes(row=1, col=1, title_text="RSI", range=[0, 100])
     fig.update_yaxes(row=2, col=1, title_text="MACD")
     fig.update_yaxes(row=3, col=1, title_text="ATR")
@@ -568,7 +597,7 @@ elif "Asset Detail" in page:
         st.caption(f"Volume analysis unavailable: {e}")
     # Last 90 bars + interval-aware MC & Prophet forecast
     st.markdown('<div class="section-title">Last 90 bars + forecast (30 bars ahead)</div>', unsafe_allow_html=True)
-    _INTERVAL_DELTA = {"1m": pd.Timedelta(minutes=1), "5m": pd.Timedelta(minutes=5), "15m": pd.Timedelta(minutes=15), "30m": pd.Timedelta(minutes=30), "1h": pd.Timedelta(hours=1), "4h": pd.Timedelta(hours=4), "1d": pd.Timedelta(days=1),}
+    _INTERVAL_DELTA = {"1m": pd.Timedelta(minutes=1), "5m": pd.Timedelta(minutes=5), "15m": pd.Timedelta(minutes=15), "30m": pd.Timedelta(minutes=30), "1h": pd.Timedelta(hours=1), "4h":  pd.Timedelta(hours=4), "1d":  pd.Timedelta(days=1),}
     _bar_delta = _INTERVAL_DELTA.get(interval, pd.Timedelta(days=1))
     _n_forecast = 30
     _is_daily = _bar_delta >= pd.Timedelta(days=1)
@@ -590,47 +619,72 @@ elif "Asset Detail" in page:
     _row_h = [0.72, 0.28] if _has_vol else [1.0]
     _n_rows = 2 if _has_vol else 1
     fig_z6 = make_subplots(rows=_n_rows, cols=1, shared_xaxes=True, row_heights=_row_h, vertical_spacing=0.02,)
+    # Gap-free integer positions for the 90 history bars
+    _z_n = len(_df90)
+    _zx = list(range(_z_n))                          # 0 … 89  (history)
+    _zx_f = list(range(_z_n, _z_n + _n_forecast))     # 90 … 119 (forecast)
+    _z90_tv, _z90_tt = [], []
+    _z_step = max(1, _z_n // 12)
+    for i in range(0, _z_n, _z_step):
+        _z90_tv.append(i)
+        _z90_tt.append(_df90.index[i].strftime("%d %b %H:%M" if _is_intraday else "%d %b %Y"))
+    # Add first forecast label
+    _z90_tv.append(_z_n)
+    _z90_tt.append(_fut_idx[0].strftime("%d %b %H:%M" if _is_intraday else "%d %b %Y"))
+    _z_idx_map = {ts: i for i, ts in enumerate(_df90.index)}
     # Price line
-    fig_z6.add_trace(go.Scatter(x=_df90.index, y=_c90, name="Price", line=dict(color="#185FA5", width=2)), row=1, col=1)
-    fig_z6.add_trace(go.Scatter(x=_df90.index, y=_df90["EMA_short"], name=f"EMA{p['MA_SHORT']}", line=dict(color="#e67e22", width=1, dash="dot")), row=1, col=1)
-    fig_z6.add_trace(go.Scatter(x=_df90.index, y=_df90["EMA_long"], name=f"EMA{p['MA_LONG']}", line=dict(color="#8e44ad", width=1, dash="dot")), row=1, col=1)
-    fig_z6.add_trace(go.Scatter(x=_df90.index, y=_df90["BB_upper"], line=dict(color="#4fc3f7", width=0.7, dash="dash"), showlegend=False), row=1, col=1)
-    fig_z6.add_trace(go.Scatter(x=_df90.index, y=_df90["BB_lower"], name="BB Band", line=dict(color="#4fc3f7", width=0.7, dash="dash"), fill="tonexty", fillcolor="rgba(79,195,247,0.06)"), row=1, col=1) 
+    fig_z6.add_trace(go.Scatter(x=_zx, y=_c90, name="Price", line=dict(color="#185FA5", width=2)), row=1, col=1)
+    fig_z6.add_trace(go.Scatter(x=_zx, y=_df90["EMA_short"], name=f"EMA{p['MA_SHORT']}", line=dict(color="#e67e22", width=1, dash="dot")), row=1, col=1)
+    fig_z6.add_trace(go.Scatter(x=_zx, y=_df90["EMA_long"], name=f"EMA{p['MA_LONG']}", line=dict(color="#8e44ad", width=1, dash="dot")), row=1, col=1)
+    fig_z6.add_trace(go.Scatter(x=_zx, y=_df90["BB_upper"], line=dict(color="#4fc3f7", width=0.7, dash="dash"), showlegend=False), row=1, col=1)
+    fig_z6.add_trace(go.Scatter(x=_zx, y=_df90["BB_lower"], name="BB Band", line=dict(color="#4fc3f7", width=0.7, dash="dash"), fill="tonexty", fillcolor="rgba(79,195,247,0.06)"), row=1, col=1) 
     # BUY/SELL markers
     if "signal" in _df90.columns:
-        _b = _df90[_df90["signal"] ==  1]
-        _se = _df90[_df90["signal"] == -1]
+        _b  = [_z_idx_map[ts] for ts in _df90[_df90["signal"] ==  1].index]
+        _se = [_z_idx_map[ts] for ts in _df90[_df90["signal"] == -1].index]
         if len(_b):
-            fig_z6.add_trace(go.Scatter(x=_b.index, y=_c90[_b.index], mode="markers", name="BUY", marker=dict(symbol="triangle-up", size=9, color="#27ae60")), row=1, col=1)
+            fig_z6.add_trace(go.Scatter(x=_b, y=_c90.iloc[_b], mode="markers", name="BUY", marker=dict(symbol="triangle-up", size=9, color="#27ae60")), row=1, col=1)
         if len(_se):
-            fig_z6.add_trace(go.Scatter(x=_se.index, y=_c90[_se.index], mode="markers", name="SELL", marker=dict(symbol="triangle-down", size=9, color="#e74c3c")), row=1, col=1)
+            fig_z6.add_trace(go.Scatter(x=_se, y=_c90.iloc[_se], mode="markers", name="SELL", marker=dict(symbol="triangle-down", size=9, color="#e74c3c")), row=1, col=1)
     # Monte Carlo – interval-aware future dates
     try:
         mc_z = monte_carlo_forecast(_c90, profile=s["profile"], n_days=_n_forecast, n_sim=500)
         # Override dates with our interval-correct future index
-        mc_dates = list(_fut_idx)
-        _n_use = min(len(mc_dates), len(mc_z["p50"]))
-        mc_dates = mc_dates[:_n_use]
-        fig_z6.add_trace(go.Scatter(x=mc_dates + mc_dates[::-1], y=list(mc_z["p10"][:_n_use]) + list(mc_z["p90"][:_n_use])[::-1], fill="toself", fillcolor="rgba(55,138,221,0.08)", line=dict(color="rgba(0,0,0,0)"), name="MC 10–90 %"), row=1, col=1)
-        fig_z6.add_trace(go.Scatter(x=mc_dates + mc_dates[::-1], y=list(mc_z["p25"][:_n_use]) + list(mc_z["p75"][:_n_use])[::-1], fill="toself", fillcolor="rgba(55,138,221,0.20)", line=dict(color="rgba(0,0,0,0)"), name="MC 25–75 %"), row=1, col=1)
-        fig_z6.add_trace(go.Scatter(x=mc_dates, y=mc_z["p50"][:_n_use], name="MC median", line=dict(color="#378ADD", width=2, dash="dash")), row=1, col=1)
-        # Annotation at end of MC median
-        fig_z6.add_annotation(x=mc_dates[-1], y=float(mc_z["p50"][_n_use-1]), text=f" ${float(mc_z["p50"][_n_use-1]):,.0f}", showarrow=False, font=dict(color="#378ADD", size=10), xanchor="left")
+        _n_use = min(_n_forecast, len(mc_z["p50"]))
+        _fxmc  = _zx_f[:_n_use]
+        fig_z6.add_trace(go.Scatter(
+            x=_fxmc + _fxmc[::-1],
+            y=list(mc_z["p10"][:_n_use]) + list(mc_z["p90"][:_n_use])[::-1],
+            fill="toself", fillcolor="rgba(55,138,221,0.08)",
+            line=dict(color="rgba(0,0,0,0)"), name="MC 10–90 %"), row=1, col=1)
+        fig_z6.add_trace(go.Scatter(
+            x=_fxmc + _fxmc[::-1],
+            y=list(mc_z["p25"][:_n_use]) + list(mc_z["p75"][:_n_use])[::-1],
+            fill="toself", fillcolor="rgba(55,138,221,0.20)",
+            line=dict(color="rgba(0,0,0,0)"), name="MC 25–75 %"), row=1, col=1)
+        fig_z6.add_trace(go.Scatter(
+            x=_fxmc, y=mc_z["p50"][:_n_use],
+            name="MC median", line=dict(color="#378ADD", width=2, dash="dash")), row=1, col=1)
+        fig_z6.add_annotation(x=_fxmc[-1], y=float(mc_z["p50"][_n_use-1]),
+            text=f" ${float(mc_z['p50'][_n_use-1]):,.0f}",
+            showarrow=False, font=dict(color="#378ADD", size=10), xanchor="left")
     except Exception:
         pass
     # Prophet – interval-aware future dates
     try:
         pf_z = prophet_forecast(close, n_days=_n_forecast)
+        _np_use = min(_n_forecast, len(pf_z["yhat"]))
+        _fxpf   = _zx_f[:_np_use]
         if pf_z:
-            fig_z6.add_trace(go.Scatter(x=list(pf_z["dates"]) + list(pf_z["dates"])[::-1], y=list(pf_z["yhat_lower"]) + list(pf_z["yhat_upper"])[::-1], fill="toself", fillcolor="rgba(230,126,34,0.15)", line=dict(color="rgba(0,0,0,0)"), name="80% CI"))
-            fig_z6.add_trace(go.Scatter(x=pf_z["dates"], y=pf_z["yhat"], name="Forecast (yhat)", line=dict(color="#e67e22", width=2)))
-            fig_z6.add_trace(go.Scatter(x=pf_z["dates"], y=pf_z["trend"], name="Trend", line=dict(color="#e67e22", width=1.2, dash="dash"), opacity=0.6))
+            fig_z6.add_trace(go.Scatter(x=_fxpf + _fxpf[::-1], y=list(pf_z["yhat_lower"][:_np_use]) + list(pf_z["yhat_upper"][:_np_use])[::-1], fill="toself", fillcolor="rgba(230,126,34,0.12)", line=dict(color="rgba(0,0,0,0)"), name="Prophet 80% CI"), row=1, col=1)
+            fig_z6.add_trace(go.Scatter(x=_fxpf, y=pf_z["yhat"][:_np_use], name=f"Prophet ({pf_z['trend_label']})", line=dict(color="#e67e22", width=2.2)), row=1, col=1)
+            fig_z6.add_trace(go.Scatter(x=_fxpf, y=pf_z["trend"][:_np_use], name="Trend", line=dict(color="#e67e22", width=1.2, dash="dash"), opacity=0.6))
             #fig_z6.add_hline(y=pf_z["last"], line_color="#aaa", line_dash="dot", annotation_text=f" Current ${pf_z['last']:,.2f}", annotation_font_color="#666")    
-            fig_z6.add_annotation(x=pf_z["ds"][-1], y=float(pf_z["yhat"]), text=f" ${float(pf_z["yhat"]):,.0f}", showarrow=False, font=dict(color="#e67e22", size=10), xanchor="left")
+            fig_z6.add_annotation(x=_fxpf[-1], y=float(pf_z["yhat"][_np_use-1]), text=f" ${float(pf_z['yhat'][_np_use-1]):,.0f}", showarrow=False, font=dict(color="#e67e22", size=10), xanchor="left")
     except Exception:
         pass
     # Vertical separator: history | forecast
-    fig_z6.add_vline(x=_last_ts, line_color="#888", line_dash="dot", line_width=1.2, row=1, col=1)
+    fig_z6.add_vline(x=_z_n - 0.5, line_color="#888", line_dash="dot", line_width=1.5, row=1, col=1)
     # Volume bars
     if _has_vol:
         _vol = _df90["Volume"].astype(float)
@@ -640,16 +694,18 @@ elif "Asset Detail" in page:
         for i, vv in enumerate(_vol.values):
             avg = float(_va20.iloc[i]) if not pd.isna(_va20.iloc[i]) else _va_last
             _vcol.append("#e74c3c" if vv > avg * 1.5 else "#27ae60" if vv > avg else "#b0bec5")
-        fig_z6.add_trace(go.Bar(x=_df90.index, y=_vol, name="Volume", marker_color=_vcol, opacity=0.85), row=2, col=1)
-        fig_z6.add_trace(go.Scatter(x=_df90.index, y=_va20, name="Vol avg 20", line=dict(color="#888", width=1, dash="dot")), row=2, col=1)
+        fig_z6.add_trace(go.Bar(x=_zx, y=_vol, name="Volume", marker_color=_vcol, opacity=0.85), row=2, col=1)
+        fig_z6.add_trace(go.Scatter(x=_zx, y=_va20, name="Vol avg 20", line=dict(color="#888", width=1, dash="dot")), row=2, col=1)
     # Layout
     _interval_lbl = {"1m":"1-min","5m":"5-min","15m":"15-min","30m":"30-min", "1h":"1-hour","4h":"4-hour","1d":"daily"}.get(interval,"bar")
-    fig_z6.update_layout(height=480 if _has_vol else 380, template="plotly_white", plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff", margin=dict(t=10, b=60, l=70, r=80), legend=dict(orientation="h", y=1.02, font_size=10), title=dict(text=f"Last 90 {_interval_lbl} bars + 30 {_interval_lbl} forecast", font_size=12, x=0), xaxis=_xaxis_cfg(show_labels=not _has_vol),)
+    fig_z6.update_layout(height=480 if _has_vol else 380, template="plotly_white", plot_bgcolor="#f8f9fa", paper_bgcolor="#ffffff", margin=dict(t=10, b=60, l=70, r=80), legend=dict(orientation="h", y=1.02, font_size=10), title=dict(text=f"Last 90 {_interval_lbl} bars + 30 {_interval_lbl} forecast", font_size=12, x=0))
+    _z_xax = _gapfree_xaxis(_z90_tv, _z90_tt)
     if _has_vol:
-        fig_z6.update_layout(xaxis2=_xaxis_cfg(show_labels=True))
+        fig_z6.update_xaxes(row=2, col=1, **_z_xax, showticklabels=True)
         fig_z6.update_yaxes(row=2, col=1, title_text="Volume", tickformat=".2s")
     fig_z6.update_yaxes(row=1, col=1, title_text="Price (USD)")
-    fig_z6.update_xaxes(range=[_df90.index.min(), max(pf_z["dates"])])
+    fig_z6.update_xaxes(row=1, col=1, **_z_xax, showticklabels=not _has_vol)
+    fig_z6.update_xaxes(row=2, col=1, range=[_df90.index[-1], _z_n + mc_z["p50"].shape[0]])
     st.plotly_chart(fig_z6, use_container_width=True)
     # Separate MC / Prophet detail panels
     st.markdown('<div class="section-title">Forecast detail – Monte Carlo vs Prophet</div>', unsafe_allow_html=True)
